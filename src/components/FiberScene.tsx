@@ -130,7 +130,7 @@ function HelmetModel({ tubeAngleRef }: { tubeAngleRef: React.MutableRefObject<nu
         clearcoat: 0.1,
         clearcoatRoughness: 1.1,
         iridescenceThicknessRange: [100, 400],
-        color: "transparent",
+        color: "#ffffff",
         transparent: true,
         depthWrite: true,
       }),

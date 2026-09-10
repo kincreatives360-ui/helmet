@@ -148,7 +148,7 @@ function HelmetModel({ sphereAngleRef }: { sphereAngleRef: React.MutableRefObjec
         iridescence: 0,
         iridescenceIOR: 0,
         iridescenceThicknessRange: [100, 400],
-        color: "transparent",
+        color: "#ffffff",
         transparent: true,
         depthWrite: true,
         side: DoubleSide,   
