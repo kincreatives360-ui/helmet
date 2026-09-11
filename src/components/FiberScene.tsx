@@ -509,6 +509,7 @@ export function FiberScene({ playbackMode = "interactive", progress = 0 }: Templ
         onWheel={onWheel}
       >
         <Canvas
+          gl={{ preserveDrawingBuffer: true }}
           camera={{ position: [0, 0, 6.5], fov: 50 }}
           onCreated={({ camera }) => {
             camera.lookAt(0, 0, 0);

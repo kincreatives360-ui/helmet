@@ -1,25 +1,38 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useEditorStore } from "../store/editorStore";
 
 export function BottomNav() {
-  const pathname = usePathname();
-  const onCodrop = pathname?.startsWith("/codrop");
-  const onRubens = pathname?.startsWith("/rubens");
-  const onHelmet = !onCodrop && !onRubens;
+  const activeTemplateId = useEditorStore((s) => s.activeTemplateId);
+  const setActiveTemplate = useEditorStore((s) => s.setActiveTemplate);
 
   return (
-    <nav className="bottomNav" aria-label="Pages">
-      <Link className={onHelmet ? "isActive" : ""} href="/">
+    <nav className="bottomNav" aria-label="Template Presets">
+      <button
+        id="nav-preset-tube"
+        type="button"
+        className={`bottomNavItem ${activeTemplateId === "tube" ? "isActive" : ""}`}
+        onClick={() => setActiveTemplate("tube")}
+      >
         Tube
-      </Link>
-      <Link className={onCodrop ? "isActive" : ""} href="/codrop">
+      </button>
+      <button
+        id="nav-preset-sphere"
+        type="button"
+        className={`bottomNavItem ${activeTemplateId === "sphere" ? "isActive" : ""}`}
+        onClick={() => setActiveTemplate("sphere")}
+      >
         Sphere
-      </Link>
-      <Link className={onRubens ? "isActive" : ""} href="/rubens">
+      </button>
+      <button
+        id="nav-preset-rubens"
+        type="button"
+        className={`bottomNavItem ${activeTemplateId === "rubens" ? "isActive" : ""}`}
+        onClick={() => setActiveTemplate("rubens")}
+      >
         Rubens
-      </Link>
+      </button>
     </nav>
   );
 }
+

@@ -15,6 +15,9 @@ type EditorActions = {
   setTubeParams: (params: Partial<EditorState["tubeParams"]>) => void;
   setTemplateParam: (key: string, value: number | string | boolean) => void;
   setCenterpieceLogo: (logo: CenterpieceLogo | null) => void;
+  setPreviewProgress: (progress: number) => void;
+  setEasing: (easing: string) => void;
+  setPlaybackMode: (mode: "interactive" | "auto") => void;
 };
 
 export const useEditorStore = create<EditorState & EditorActions>((set, get) => ({
@@ -32,6 +35,9 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
     count: 24,
   },
   centerpieceLogo: null,
+  previewProgress: 0,
+  easing: "power1.inOut",
+  playbackMode: "interactive",
 
   addAssetToSlot: (slotId, asset) => {
     set((state) => {
@@ -185,5 +191,8 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
   setTubeParams: (params) =>
     set((state) => ({ tubeParams: { ...state.tubeParams, ...params } })),
   setCenterpieceLogo: (logo) => set({ centerpieceLogo: logo }),
+  setPreviewProgress: (progress) => set({ previewProgress: progress }),
+  setEasing: (easing) => set({ easing }),
+  setPlaybackMode: (mode) => set({ playbackMode: mode }),
 }));
 

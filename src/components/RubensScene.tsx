@@ -374,7 +374,7 @@ export function RubensScene({ playbackMode = "interactive", progress = 0 }: Temp
 
       <Canvas
         camera={{ position: [0, 0, 6], fov: 50 }}
-        gl={{ antialias: true, powerPreference: "high-performance", alpha: true }}
+        gl={{ antialias: true, powerPreference: "high-performance", alpha: true, preserveDrawingBuffer: true }}
         dpr={[1, 2]}
         frameloop="always"
         onCreated={({ camera, gl }) => {

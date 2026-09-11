@@ -18,6 +18,11 @@ export const metadata: Metadata = {
   title: "Helmet Portfolio Experience",
   description:
     "Interactive 3D WebGL showcase with React Three Fiber, featuring dynamic tubes, spheres, and Rubens experiences.",
+  openGraph: {
+    title: "Helmet Portfolio Experience",
+    description:
+      "Interactive 3D WebGL showcase with React Three Fiber, featuring dynamic tubes, spheres, and Rubens experiences.",
+  },
 };
 
 export default function RootLayout({

@@ -5,10 +5,13 @@ import { TemplateGallery } from "../../components/editor/TemplateGallery";
 import { ParamControls } from "../../components/editor/ParamControls";
 import { AssetPanel } from "../../components/editor/AssetPanel";
 import { ExportButton } from "../../components/editor/ExportButton";
+import { Timeline } from "../../components/editor/Timeline";
 
 export default function EditorPage() {
   const activeTemplateId = useEditorStore((s) => s.activeTemplateId);
   const setActiveTemplate = useEditorStore((s) => s.setActiveTemplate);
+  const previewProgress = useEditorStore((s) => s.previewProgress);
+  const playbackMode = useEditorStore((s) => s.playbackMode);
   const template = activeTemplateId ? getTemplate(activeTemplateId) : undefined;
 
   if (!template) {
@@ -46,7 +49,14 @@ export default function EditorPage() {
         <ExportButton templateId={template.id} durationSeconds={template.durationSeconds} />
       </aside>
       <main className="editorStage">
-        <Scene playbackMode="interactive" progress={0} />
+        <div className="editorStageWrapper">
+          <div className="editorStageContent">
+            <Scene playbackMode={playbackMode} progress={previewProgress} />
+          </div>
+          <div className="editorStageTimelineDock">
+            <Timeline durationSeconds={template.durationSeconds} />
+          </div>
+        </div>
       </main>
     </div>
   );

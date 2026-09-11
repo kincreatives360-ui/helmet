@@ -354,29 +354,52 @@ body {
 	gap: 8px;
 }
 
-.bottomNav a {
+.bottomNav a,
+.bottomNav button,
+.bottomNavItem {
 	text-decoration: none;
 	font-size: 12px;
+	font-family: inherit;
 	line-height: 1;
-	padding: 10px 12px;
+	padding: 10px 14px;
 	border-radius: 9999px;
 	border: 1px solid rgba(255, 255, 255, 0.25);
 	color: rgba(255, 255, 255, 0.92);
 	background: rgba(0, 0, 0, 0.35);
+	cursor: pointer;
+	transition: all 0.15s ease;
 }
 
-.bottomNav a.isActive {
-	background: rgba(255, 255, 255, 0.12);
+.bottomNav a:hover,
+.bottomNav button:hover,
+.bottomNavItem:hover {
+	background: rgba(255, 255, 255, 0.15);
+	border-color: rgba(255, 255, 255, 0.4);
 }
 
-.sceneRoot--light .bottomNav a {
+.bottomNav a.isActive,
+.bottomNav button.isActive,
+.bottomNavItem.isActive {
+	background: #2563eb;
+	border-color: #3b82f6;
+	color: #ffffff;
+	font-weight: 500;
+}
+
+.sceneRoot--light .bottomNav a,
+.sceneRoot--light .bottomNav button,
+.sceneRoot--light .bottomNavItem {
 	border: 1px solid rgba(0, 0, 0, 0.18);
 	color: rgba(0, 0, 0, 0.86);
 	background: rgba(255, 255, 255, 0.65);
 }
 
-.sceneRoot--light .bottomNav a.isActive {
-	background: rgba(0, 0, 0, 0.06);
+.sceneRoot--light .bottomNav a.isActive,
+.sceneRoot--light .bottomNav button.isActive,
+.sceneRoot--light .bottomNavItem.isActive {
+	background: #2563eb;
+	border-color: #2563eb;
+	color: #ffffff;
 }
 
 .projectTooltip {
@@ -991,6 +1014,271 @@ body {
 	font-size: 12px;
 	color: #60a5fa;
 	text-align: center;
+	font-weight: 500;
+}
+
+.exportProgressBarWrapper {
+	width: 100%;
+	height: 6px;
+	background: rgba(255, 255, 255, 0.1);
+	border-radius: 3px;
+	overflow: hidden;
+	position: relative;
+}
+
+.exportProgressBarFill {
+	height: 100%;
+	background: #3b82f6;
+	transition: width 0.15s ease-out;
+	border-radius: 3px;
+}
+
+.exportCaveatNote {
+	font-size: 11px;
+	line-height: 1.4;
+	color: #9ca3af;
+	background: rgba(255, 255, 255, 0.03);
+	border: 1px solid rgba(255, 255, 255, 0.06);
+	padding: 8px 10px;
+	border-radius: 6px;
+}
+
+.exportCaveatNote strong {
+	color: #e5e7eb;
+}
+
+/* Timeline Controls */
+.timelineContainer {
+	background: #151820;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	border-radius: 12px;
+	padding: 14px 18px;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+	backdrop-filter: blur(12px);
+}
+
+.timelineHeader {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.timelineHeaderLeft {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.timelineTitle {
+	font-size: 13px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	color: #f3f4f6;
+}
+
+.timelineModeBadge {
+	display: flex;
+	background: rgba(0, 0, 0, 0.4);
+	padding: 2px;
+	border-radius: 6px;
+	border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.modeBadgeBtn {
+	padding: 3px 8px;
+	font-size: 11px;
+	font-weight: 500;
+	border-radius: 4px;
+	border: none;
+	background: transparent;
+	color: #9ca3af;
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+
+.modeBadgeBtn:hover {
+	color: #ffffff;
+}
+
+.modeBadgeBtn--active {
+	background: #2563eb;
+	color: #ffffff;
+}
+
+.timelineHeaderRight {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.easingLabel {
+	font-size: 12px;
+	color: #9ca3af;
+}
+
+.easingSelect {
+	background: #1e222d;
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	border-radius: 6px;
+	color: #e5e7eb;
+	padding: 4px 10px;
+	font-size: 12px;
+	outline: none;
+	cursor: pointer;
+	font-family: inherit;
+	transition: border-color 0.15s ease;
+}
+
+.easingSelect:focus {
+	border-color: #3b82f6;
+}
+
+.timelineTrackRow {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+}
+
+.timelinePlayBtn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	height: 32px;
+	padding: 0 12px;
+	background: #2563eb;
+	color: #ffffff;
+	border: none;
+	border-radius: 6px;
+	font-size: 12px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: background 0.15s ease;
+	flex-shrink: 0;
+}
+
+.timelinePlayBtn:hover {
+	background: #1d4ed8;
+}
+
+.timelineScrubberWrapper {
+	position: relative;
+	flex: 1;
+	display: flex;
+	align-items: center;
+	height: 24px;
+}
+
+.timelineScrubber {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 100%;
+	height: 6px;
+	border-radius: 3px;
+	background: rgba(255, 255, 255, 0.1);
+	outline: none;
+	cursor: pointer;
+	position: relative;
+	z-index: 2;
+	margin: 0;
+}
+
+.timelineScrubber::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: #60a5fa;
+	border: 2px solid #ffffff;
+	cursor: grab;
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+	transition: transform 0.1s ease, background-color 0.1s ease;
+}
+
+.timelineScrubber::-webkit-slider-thumb:hover {
+	transform: scale(1.15);
+	background: #93c5fd;
+}
+
+.timelineScrubber::-webkit-slider-thumb:active {
+	cursor: grabbing;
+	transform: scale(1.25);
+}
+
+.timelineScrubber::-moz-range-thumb {
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: #60a5fa;
+	border: 2px solid #ffffff;
+	cursor: grab;
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.timelineProgressFill {
+	position: absolute;
+	left: 0;
+	top: 50%;
+	transform: translateY(-50%);
+	height: 6px;
+	background: #3b82f6;
+	border-radius: 3px 0 0 3px;
+	pointer-events: none;
+	z-index: 1;
+}
+
+.timelineTimeReadout {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	font-size: 12px;
+	color: #9ca3af;
+	flex-shrink: 0;
+}
+
+.currentTimeText {
+	color: #f3f4f6;
+	font-weight: 600;
+}
+
+.totalTimeText {
+	color: #6b7280;
+}
+
+.timeDivider {
+	color: #4b5563;
+}
+
+.editorStageWrapper {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+}
+
+.editorStageContent {
+	position: relative;
+	flex: 1;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+}
+
+.editorStageTimelineDock {
+	position: absolute;
+	bottom: 24px;
+	left: 24px;
+	right: 24px;
+	max-width: 800px;
+	margin: 0 auto;
+	z-index: 20;
 }
 
 /* Gallery Standalone Layout */

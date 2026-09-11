@@ -31,4 +31,7 @@ export type EditorState = {
   images: ImageAsset[];
   tubeParams: { rows: number; cols: number; radius: number; baseSpeed: number };
   activePreset: "tube" | "sphere" | "rubens";
+  previewProgress: number;
+  easing: string;
+  playbackMode: "interactive" | "auto";
 };

@@ -605,6 +605,7 @@ export function CodropScene({ playbackMode = "interactive", progress = 0 }: Temp
       onWheel={onWheel}
     >
       <Canvas
+        gl={{ preserveDrawingBuffer: true }}
         frameloop="always"
         camera={{ position: [0, 0, 6.5], fov: 50 }}
         onCreated={({ camera }) => {
