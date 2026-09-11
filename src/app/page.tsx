@@ -1,5 +1,5 @@
-import { FiberScene } from "../components/FiberScene";
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return <FiberScene />;
+  redirect("/editor");
 }

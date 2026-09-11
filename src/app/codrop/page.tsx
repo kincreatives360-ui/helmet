@@ -1,5 +1,5 @@
-import { CodropScene } from "../../components/CodropScene";
+import { redirect } from "next/navigation";
 
 export default function CodropPage() {
-  return <CodropScene />;
+  redirect("/editor");
 }

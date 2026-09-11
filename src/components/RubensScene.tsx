@@ -4,63 +4,20 @@ import Image from "next/image";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Environment, Loader, useGLTF, useTexture } from "@react-three/drei";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DoubleSide, Mesh, MeshPhysicalMaterial, Object3D, Texture } from "three";
-
-function HelmetModel({ tubeAngleRef }: { tubeAngleRef: React.MutableRefObject<number> }) {
-  const helmet = useGLTF("/models/rubens.glb");
-
-  const scene = useMemo(() => helmet.scene.clone(true), [helmet.scene]);
-  const modelRef = useRef<Object3D>(null);
-  const baseRotation = useMemo(() => ({ x: Math.PI / 8, y: Math.PI / 2 }), []);
-  const glassMaterial = useMemo(
-    () =>
-      new MeshPhysicalMaterial({
-        color: "#613309",
-        metalness: 0.9,
-        roughness: 0.3,
-        envMapIntensity: 0.1,
-        clearcoat: 0.3,
-        clearcoatRoughness: 0.4,
-      }),
-    [],
-  );
-
-  useEffect(() => {
-    const isMobile = window.innerWidth < 768;
-    const scale = isMobile ? 0.042 : 0.05;
-
-    scene.traverse((object) => {
-      if (object instanceof Mesh) {
-        object.scale.set(scale, scale, scale);
-        object.material = glassMaterial;
-        object.material.needsUpdate = true;
-      }
-    });
-
-    return () => {
-      glassMaterial.dispose();
-    };
-  }, [scene, glassMaterial]);
-
-  useFrame(() => {
-    const obj = modelRef.current;
-    if (!obj) return;
-    obj.rotation.x = baseRotation.x;
-    obj.rotation.y = baseRotation.y - tubeAngleRef.current;
-  });
-
-  return (
-    <group ref={modelRef} rotation={[baseRotation.x, baseRotation.y, 0]}>
-      <primitive object={scene} position={[0.2, 0, -0.1]} />
-    </group>
-  );
-}
+import { useEditorStore } from "../store/editorStore";
+import { CenterpieceModel } from "./CenterpieceModel";
+import { TextLayer3D } from "./TextLayer3D";
+import type { TemplateSceneProps } from "../templates/types";
+import type { SlotAsset } from "../types/editor";
+import { DoubleSide, Object3D, Texture } from "three";
 
 function ImageTube({
   scrollTargetRef,
   spinVelocityRef,
   naturalDirRef,
   tubeAngleRef,
+  playbackMode = "interactive",
+  progress = 0,
   onImageHover,
   onImageClick,
 }: {
@@ -68,6 +25,8 @@ function ImageTube({
   spinVelocityRef: React.MutableRefObject<number>;
   naturalDirRef: React.MutableRefObject<number>;
   tubeAngleRef: React.MutableRefObject<number>;
+  playbackMode?: "interactive" | "auto";
+  progress?: number;
   onImageHover: (projectName: string | null, texture: Texture | null, imageUrl: string | null) => void;
   onImageClick: (projectName: string, imageUrl: string, textureIndex: number) => void;
 }) {
@@ -78,43 +37,60 @@ function ImageTube({
   const isHovering = useRef(false);
   const speedMultiplier = useRef(1);
 
+  const storeImages = useEditorStore((s) => s.images);
   const imageUrls = useMemo(
-    () => [
-      "/tube/img1.jpg",
-      "/tube/img3.jpg",
-      "/tube/img2.jpg",
-      "/tube/img4.jpg",
-      "/tube/img5.jpg",
-      "/tube/img6.jpg",
-      "/tube/img9.jpg",
-    ],
-    [],
+    () =>
+      storeImages.length > 0
+        ? storeImages.map((img) => img.url)
+        : [
+            "/tube/img1.jpg",
+            "/tube/img3.jpg",
+            "/tube/img2.jpg",
+            "/tube/img4.jpg",
+            "/tube/img5.jpg",
+            "/tube/img6.jpg",
+            "/tube/img9.jpg",
+          ],
+    [storeImages],
   );
 
   const projectNames = useMemo(
-    () => [
-      "PROJECT ALPHA",
-      "PROJECT BETA",
-      "PROJECT GAMMA",
-      "PROJECT DELTA",
-      "PROJECT EPSILON",
-      "PROJECT ZETA",
-      "PROJECT ETA",
-    ],
-    [],
+    () =>
+      storeImages.length > 0
+        ? storeImages.map((img) => img.name)
+        : [
+            "PROJECT ALPHA",
+            "PROJECT BETA",
+            "PROJECT GAMMA",
+            "PROJECT DELTA",
+            "PROJECT EPSILON",
+            "PROJECT ZETA",
+            "PROJECT ETA",
+          ],
+    [storeImages],
   );
 
   const textures = useTexture(imageUrls);
 
-  const handleHover = useCallback((projectName: string | null, textureIndex: number | null) => {
-    isHovering.current = projectName !== null;
-    const texture = textureIndex !== null ? textures[textureIndex] : null;
-    const imageUrl = textureIndex !== null ? imageUrls[textureIndex] : null;
-    onImageHover(projectName, texture, imageUrl);
-  }, [imageUrls, onImageHover, textures]);
+  const handleHover = useCallback(
+    (projectName: string | null, textureIndex: number | null) => {
+      isHovering.current = projectName !== null;
+      const texture =
+        textureIndex !== null
+          ? Array.isArray(textures)
+            ? textures[textureIndex % textures.length]
+            : textures
+          : null;
+      const imageUrl = textureIndex !== null ? imageUrls[textureIndex % imageUrls.length] : null;
+      onImageHover(projectName, texture, imageUrl);
+    },
+    [imageUrls, onImageHover, textures],
+  );
 
+  const storeCount = useEditorStore((s) => s.templateParams.count);
+  const count = typeof storeCount === "number" ? storeCount : 24;
   const cols = 6;
-  const rows = 3;
+  const rows = Math.max(1, Math.round(count / cols));
   const radius = 4;
   const tileW = 0.72;
   const tileH = 1;
@@ -144,6 +120,24 @@ function ImageTube({
   }, [rows, totalRows, ySpacing]);
 
   useFrame((_state, dt) => {
+    if (playbackMode === "auto") {
+      const totalRotations = 1.5;
+      angle.current = progress * Math.PI * 2 * totalRotations;
+      tubeAngleRef.current = angle.current;
+
+      const group = groupRef.current;
+      if (!group) return;
+      group.position.y = 0;
+
+      for (let rowIndex = 0; rowIndex < totalRows; rowIndex++) {
+        const rowObj = rowGroupRefs.current[rowIndex];
+        if (!rowObj) continue;
+        const baseRow = rowIndex % rows;
+        rowObj.rotation.y = angle.current * rowSpeed[baseRow];
+      }
+      return;
+    }
+
     scrollCurrent.current += (scrollTargetRef.current - scrollCurrent.current) * 0.12;
 
     if (scrollCurrent.current > loopHeight / 2) {
@@ -205,7 +199,11 @@ function ImageTube({
                 onClick={() => onImageClick(projectNames[texIndex], imageUrls[texIndex], texIndex)}
               >
                 <planeGeometry args={[tileW, tileH]} />
-                <meshBasicMaterial map={textures[texIndex]} toneMapped={false} side={DoubleSide} />
+                <meshBasicMaterial
+                  map={Array.isArray(textures) ? textures[texIndex % textures.length] : textures}
+                  toneMapped={false}
+                  side={DoubleSide}
+                />
               </mesh>
             );
           })}
@@ -215,7 +213,9 @@ function ImageTube({
   );
 }
 
-export function RubensScene() {
+export function RubensScene({ playbackMode = "interactive", progress = 0 }: TemplateSceneProps = {}) {
+  void playbackMode;
+  void progress;
   const containerRef = useRef<HTMLDivElement>(null);
   const tubeScrollTarget = useRef(0);
   const tubeSpinVelocity = useRef(0);
@@ -284,26 +284,29 @@ export function RubensScene() {
   }, []);
 
   const onWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+    if (playbackMode === "auto") return;
     tubeScrollTarget.current += event.deltaY * 0.002;
     tubeSpinVelocity.current += event.deltaY * 0.004;
 
     if (event.deltaY < 0) tubeNaturalDir.current = -1;
     else if (event.deltaY > 0) tubeNaturalDir.current = 1;
-  }, []);
+  }, [playbackMode]);
 
   const handleImageHover = useCallback(
     (projectName: string | null, _texture: Texture | null, imageUrl: string | null) => {
+      if (playbackMode === "auto") return;
       setHoveredProject(projectName);
       if (imageUrl !== hoveredImageUrl) {
         setPreviousImageUrl(hoveredImageUrl);
         setHoveredImageUrl(imageUrl);
       }
     },
-    [hoveredImageUrl],
+    [hoveredImageUrl, playbackMode],
   );
 
   const handleImageClick = useCallback(
     (projectName: string, imageUrl: string, textureIndex: number) => {
+      if (playbackMode === "auto") return;
       setSelectedProject({ name: projectName, imageUrl, index: textureIndex });
 
       if (openOverlayTimeoutRef.current != null) window.clearTimeout(openOverlayTimeoutRef.current);
@@ -311,7 +314,7 @@ export function RubensScene() {
         setShowOverlay(true);
       }, 1500);
     },
-    [],
+    [playbackMode],
   );
 
   const handleCloseProject = useCallback(() => {
@@ -339,16 +342,22 @@ export function RubensScene() {
     };
   }, []);
 
+  const assetsBySlot = useEditorStore((s) => s.assetsBySlot);
+  const textAsset = useMemo(() => {
+    const assets = assetsBySlot["text"] || assetsBySlot["title"] || [];
+    return assets.find((a): a is Extract<SlotAsset, { kind: "text" }> => a.kind === "text");
+  }, [assetsBySlot]);
+
   return (
     <div
       className="sceneRoot"
       ref={containerRef}
-      onPointerEnter={onPointerEnter}
-      onPointerMove={onPointerMove}
-      onPointerLeave={onPointerLeave}
+      onPointerEnter={playbackMode === "auto" ? undefined : onPointerEnter}
+      onPointerMove={playbackMode === "auto" ? undefined : onPointerMove}
+      onPointerLeave={playbackMode === "auto" ? undefined : onPointerLeave}
       onWheel={onWheel}
     >
-      <h1 className="main-title">RUBENS EXPERIENCE</h1>
+      <h1 className="main-title">{textAsset?.content || "RUBENS EXPERIENCE"}</h1>
 
       {previousImageUrl && (
         <div
@@ -384,11 +393,34 @@ export function RubensScene() {
             spinVelocityRef={tubeSpinVelocity}
             naturalDirRef={tubeNaturalDir}
             tubeAngleRef={tubeAngle}
+            playbackMode={playbackMode}
+            progress={progress}
             onImageHover={handleImageHover}
             onImageClick={handleImageClick}
           />
 
-          <HelmetModel tubeAngleRef={tubeAngle} />
+          <CenterpieceModel
+            fallbackModelUrl="/models/rubens.glb"
+            materialParams={{
+              color: "#613309",
+              metalness: 0.9,
+              roughness: 0.3,
+              envMapIntensity: 0.1,
+              clearcoat: 0.3,
+              clearcoatRoughness: 0.4,
+            }}
+            angleRef={tubeAngle}
+          />
+
+          {textAsset && textAsset.content && (
+            <TextLayer3D
+              content={textAsset.content}
+              fontUrl={textAsset.fontUrl}
+              position={[0, -2.4, 0.5]}
+              color="#e2ba80"
+              fontSize={0.45}
+            />
+          )}
         </Suspense>
       </Canvas>
 

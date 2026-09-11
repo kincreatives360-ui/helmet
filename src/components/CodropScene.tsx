@@ -3,10 +3,14 @@
 import { Canvas, type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { Environment, Loader, useGLTF, useTexture } from "@react-three/drei";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEditorStore } from "../store/editorStore";
+import { CenterpieceModel } from "./CenterpieceModel";
+import { TextLayer3D } from "./TextLayer3D";
+import type { TemplateSceneProps } from "../templates/types";
+import type { SlotAsset } from "../types/editor";
 import {
   DoubleSide,
   Mesh,
-  MeshPhysicalMaterial,
   Object3D,
   ShaderMaterial,
   Vector2,
@@ -130,56 +134,6 @@ function GridPlaneLight({
   );
 }
 
-function HelmetModel({ sphereAngleRef }: { sphereAngleRef: React.MutableRefObject<number> }) {
-  const helmet = useGLTF("/models/helmet.glb");
-
-  const scene = useMemo(() => helmet.scene.clone(true), [helmet.scene]);
-  const modelRef = useRef<Object3D>(null);
-  const baseRotation = useMemo(() => ({ x: Math.PI / 8, y: Math.PI / 2 }), []);
-  const glassMaterial = useMemo(
-    () =>
-      new MeshPhysicalMaterial({
-        thickness: 0.9,
-        roughness: 0.0,
-        metalness: 1,
-        ior: 1.9,
-        clearcoat: 0.1,
-        clearcoatRoughness: 1.1,
-        iridescence: 0,
-        iridescenceIOR: 0,
-        iridescenceThicknessRange: [100, 400],
-        color: "#ffffff",
-        transparent: true,
-        depthWrite: true,
-        side: DoubleSide,   
-      }),
-    [],
-  );
-
-  useEffect(() => {
-    scene.traverse((object) => {
-      if (object instanceof Mesh) {
-        object.scale.set(0.7, 0.7, 0.7);
-        object.material = glassMaterial;
-        object.material.needsUpdate = true;
-      }
-    });
-
-    return () => {
-      glassMaterial.dispose();
-    };
-  }, [scene, glassMaterial]);
-
-  useFrame(() => {
-    const obj = modelRef.current;
-    if (!obj) return;
-    obj.rotation.x = baseRotation.x;
-    obj.rotation.y = baseRotation.y - sphereAngleRef.current;
-  });
-
-  return <primitive ref={modelRef} object={scene} rotation={[baseRotation.x, baseRotation.y, 0]} />;
-}
-
 function ImageSphere({
   spinVelocityXRef,
   spinVelocityYRef,
@@ -189,6 +143,8 @@ function ImageSphere({
   snapActiveRef,
   snapTargetXRef,
   snapTargetYRef,
+  playbackMode = "interactive",
+  progress = 0,
   onTileDirs,
   onHoverStart,
   onHoverMove,
@@ -202,6 +158,8 @@ function ImageSphere({
   snapActiveRef: React.MutableRefObject<boolean>;
   snapTargetXRef: React.MutableRefObject<number>;
   snapTargetYRef: React.MutableRefObject<number>;
+  playbackMode?: "interactive" | "auto";
+  progress?: number;
   onTileDirs: (dirs: Array<{ x: number; y: number; z: number }>) => void;
   onHoverStart: (projectName: string, event: ThreeEvent<PointerEvent>) => void;
   onHoverMove: (event: ThreeEvent<PointerEvent>) => void;
@@ -209,42 +167,30 @@ function ImageSphere({
 }) {
   const groupRef = useRef<Object3D>(null);
 
+  const storeImages = useEditorStore((s) => s.images);
   const imageUrls = useMemo(
-    () => [
-      "/tube/im1.jpg",
-      "/tube/im3.jpg",
-      "/tube/im2.jpg",
-      "/tube/im4.jpg",
-      "/tube/im5.jpg",
-      "/tube/im6.jpg",
-      "/tube/im7.jpg",
-      "/tube/im8.jpg",
-      "/tube/im9.jpg",
-    ],
-    [],
+    () => (storeImages.length > 0 ? storeImages.map((img) => img.url) : ["/tube/im1.jpg"]),
+    [storeImages],
   );
 
   const textures = useTexture(imageUrls);
 
   const projectNames = useMemo(() => {
+    if (storeImages.length > 0) {
+      return storeImages.map((img) => img.name);
+    }
     const fileToName: Record<string, string> = {
       "/tube/im1.jpg": "Project 1",
-      "/tube/im2.jpg": "Project 2",
-      "/tube/im3.jpg": "Project 3",
-      "/tube/im4.jpg": "Project 4",
-      "/tube/im5.jpg": "Project 5",
-      "/tube/im6.jpg": "Project 6",
-      "/tube/im7.jpg": "Project 7",
-      "/tube/im8.jpg": "Project 8",
-      "/tube/im9.jpg": "Project 9",
     };
     return imageUrls.map((url) => fileToName[url] ?? url);
-  }, [imageUrls]);
+  }, [storeImages, imageUrls]);
 
-  const radius = 4.25;
+  const storeRadius = useEditorStore((s) => s.templateParams.radius);
+  const storeCount = useEditorStore((s) => s.templateParams.count);
+  const radius = typeof storeRadius === "number" ? storeRadius : 4.25;
   const tileW = 0.72;
   const tileH = 1.0;
-  const tileCount = imageUrls.length * 8;
+  const tileCount = typeof storeCount === "number" ? storeCount : imageUrls.length * 8;
 
   const tiles = useMemo(() => {
     const out: Array<{ x: number; y: number; z: number; texIndex: number }> = [];
@@ -289,6 +235,18 @@ function ImageSphere({
   );
 
   useFrame((_state, dt) => {
+    if (playbackMode === "auto") {
+      const totalRotations = 1.0;
+      angleXRef.current = 0;
+      angleYRef.current = progress * Math.PI * 2 * totalRotations;
+      const group = groupRef.current;
+      if (group) {
+        group.rotation.x = angleXRef.current;
+        group.rotation.y = angleYRef.current;
+      }
+      return;
+    }
+
     const damping = 0.92;
     spinVelocityXRef.current *= Math.pow(damping, dt * 60);
     spinVelocityYRef.current *= Math.pow(damping, dt * 60);
@@ -356,7 +314,11 @@ function ImageSphere({
             }}
           >
             <planeGeometry args={[tileW, tileH]} />
-            <meshBasicMaterial map={textures[texIndex]} toneMapped={false} side={DoubleSide} />
+            <meshBasicMaterial
+              map={Array.isArray(textures) ? textures[texIndex % textures.length] : textures}
+              toneMapped={false}
+              side={DoubleSide}
+            />
           </mesh>
         );
       })}
@@ -364,7 +326,9 @@ function ImageSphere({
   );
 }
 
-export function CodropScene() {
+export function CodropScene({ playbackMode = "interactive", progress = 0 }: TemplateSceneProps = {}) {
+  void playbackMode;
+  void progress;
   const containerRef = useRef<HTMLDivElement>(null);
   const targetCenterUv = useRef(new Vector2(0.5, 0.5));
 
@@ -611,6 +575,7 @@ export function CodropScene() {
   }, [endDrag, onImageHoverEnd]);
 
   const onWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+    if (playbackMode === "auto") return;
     sphereSpinVelocityY.current += event.deltaY * 0.004;
 
     if (snapWheelTimeoutRef.current != null) {
@@ -619,18 +584,24 @@ export function CodropScene() {
     snapWheelTimeoutRef.current = window.setTimeout(() => {
       if (!isDraggingRef.current) requestSnap();
     }, 140);
-  }, [requestSnap]);
+  }, [playbackMode, requestSnap]);
+
+  const assetsBySlot = useEditorStore((s) => s.assetsBySlot);
+  const textAsset = useMemo(() => {
+    const assets = assetsBySlot["text"] || assetsBySlot["title"] || [];
+    return assets.find((a): a is Extract<SlotAsset, { kind: "text" }> => a.kind === "text");
+  }, [assetsBySlot]);
 
   return (
     <div
       className="sceneRoot sceneRoot--light"
       ref={containerRef}
-      onPointerEnter={onPointerEnter}
-      onPointerMove={onPointerMove}
-      onPointerDown={onPointerDown}
-      onPointerUp={endDrag}
-      onPointerCancel={endDrag}
-      onPointerLeave={onPointerLeave}
+      onPointerEnter={playbackMode === "auto" ? undefined : onPointerEnter}
+      onPointerMove={playbackMode === "auto" ? undefined : onPointerMove}
+      onPointerDown={playbackMode === "auto" ? undefined : onPointerDown}
+      onPointerUp={playbackMode === "auto" ? undefined : endDrag}
+      onPointerCancel={playbackMode === "auto" ? undefined : endDrag}
+      onPointerLeave={playbackMode === "auto" ? undefined : onPointerLeave}
       onWheel={onWheel}
     >
       <Canvas
@@ -658,6 +629,8 @@ export function CodropScene() {
             snapActiveRef={snapActiveRef}
             snapTargetXRef={snapTargetXRef}
             snapTargetYRef={snapTargetYRef}
+            playbackMode={playbackMode}
+            progress={progress}
             onTileDirs={(dirs) => {
               tileDirsRef.current = dirs;
             }}
@@ -666,7 +639,33 @@ export function CodropScene() {
             onHoverEnd={onImageHoverEnd}
           />
 
-          <HelmetModel sphereAngleRef={sphereAngleY} />
+          <CenterpieceModel
+            fallbackModelUrl="/models/helmet.glb"
+            materialParams={{
+              transmission: 1,
+              thickness: 10,
+              roughness: 0,
+              metalness: 0.1,
+              ior: 1.9,
+              dispersion: 1,
+              clearcoat: 0.1,
+              clearcoatRoughness: 1.1,
+              color: "#ffffff",
+              transparent: true,
+              depthWrite: true,
+            }}
+            angleRef={sphereAngleY}
+          />
+
+          {textAsset && textAsset.content && (
+            <TextLayer3D
+              content={textAsset.content}
+              fontUrl={textAsset.fontUrl}
+              position={[0, -2.4, 0.5]}
+              color="#111827"
+              fontSize={0.45}
+            />
+          )}
         </Suspense>
       </Canvas>
 

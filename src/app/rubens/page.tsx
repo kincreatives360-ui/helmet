@@ -1,5 +1,5 @@
-import { RubensScene } from "@/components/RubensScene";
+import { redirect } from "next/navigation";
 
 export default function RubensPage() {
-  return <RubensScene />;
+  redirect("/editor");
 }
