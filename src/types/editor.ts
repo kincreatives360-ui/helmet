@@ -17,10 +17,11 @@ export type CanvasPreset = {
   height: number;
 };
 
-export type CenterpieceLogo = {
-  kind: "svg" | "png";
-  raw: string; // svg markup, or data URL for png
-};
+export type CenterpieceLogo =
+  | { kind: "svg"; raw: string }
+  | { kind: "png"; raw: string } // existing: traced + extruded
+  | { kind: "model"; url: string; keepOriginalMaterial?: boolean } // NEW: user-uploaded .glb/.gltf, used as-is
+  | { kind: "photo"; url: string }; // NEW: flat image, displayed on a plane, not extruded
 
 export type EditorState = {
   activeTemplateId: string | null;
@@ -34,4 +35,5 @@ export type EditorState = {
   previewProgress: number;
   easing: string;
   playbackMode: "interactive" | "auto";
+  durationSeconds: number;
 };

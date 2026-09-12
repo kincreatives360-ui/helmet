@@ -4,7 +4,8 @@ export type ParamField =
   | { key: string; label: string; type: "number"; min: number; max: number; step: number; default: number }
   | { key: string; label: string; type: "select"; options: string[]; default: string }
   | { key: string; label: string; type: "color"; default: string }
-  | { key: string; label: string; type: "boolean"; default: boolean };
+  | { key: string; label: string; type: "boolean"; default: boolean }
+  | { key: string; label: string; type: "string"; default: string; placeholder?: string };
 
 export type AssetSlot = {
   id: string;

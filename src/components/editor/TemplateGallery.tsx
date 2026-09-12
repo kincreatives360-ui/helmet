@@ -25,6 +25,9 @@ export function TemplateGallery() {
                 alt={tpl.name}
                 width={320}
                 height={180}
+                loading="eager"
+                priority
+                referrerPolicy="no-referrer"
                 className="templateThumbnail"
               />
             </div>

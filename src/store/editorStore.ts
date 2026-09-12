@@ -18,16 +18,18 @@ type EditorActions = {
   setPreviewProgress: (progress: number) => void;
   setEasing: (easing: string) => void;
   setPlaybackMode: (mode: "interactive" | "auto") => void;
+  setDurationSeconds: (duration: number) => void;
 };
 
 export const useEditorStore = create<EditorState & EditorActions>((set, get) => ({
   assetsBySlot: {},
   images: [],
   activePreset: "tube",
-  activeTemplateId: "tube",
+  activeTemplateId: null,
   canvasSize: { width: 1080, height: 1080 },
   tubeParams: { rows: 5, cols: 12, radius: 4, baseSpeed: 0.25 },
   templateParams: {
+    ...getDefaultParams("tube"),
     rows: 5,
     cols: 12,
     radius: 4,
@@ -37,7 +39,8 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
   centerpieceLogo: null,
   previewProgress: 0,
   easing: "power1.inOut",
-  playbackMode: "interactive",
+  playbackMode: "auto",
+  durationSeconds: 5,
 
   addAssetToSlot: (slotId, asset) => {
     set((state) => {
@@ -126,6 +129,10 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
         URL.revokeObjectURL(img.url);
       }
     });
+    const currentLogo = get().centerpieceLogo;
+    if (currentLogo && "url" in currentLogo && currentLogo.url && currentLogo.url.startsWith("blob:")) {
+      URL.revokeObjectURL(currentLogo.url);
+    }
 
     const defaults = id ? getDefaultParams(id) : {};
     const nextTubeParams = {
@@ -134,6 +141,7 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
       radius: typeof defaults.radius === "number" ? defaults.radius : 4,
       baseSpeed: typeof defaults.baseSpeed === "number" ? defaults.baseSpeed : 0.25,
     };
+    const defaultEasing = typeof defaults.easing === "string" ? defaults.easing : "power1.inOut";
     set({
       activeTemplateId: id,
       activePreset: id === "tube" || id === "sphere" || id === "rubens" ? id : "tube",
@@ -142,6 +150,8 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
       centerpieceLogo: null,
       templateParams: defaults,
       tubeParams: nextTubeParams,
+      easing: defaultEasing,
+      durationSeconds: 5,
     });
   },
 
@@ -152,9 +162,11 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
       if (key in nextTubeParams && typeof value === "number") {
         (nextTubeParams as Record<string, number>)[key] = value;
       }
+      const nextEasing = key === "easing" && typeof value === "string" ? value : state.easing;
       return {
         templateParams: nextTemplateParams,
         tubeParams: nextTubeParams,
+        easing: nextEasing,
       };
     });
   },
@@ -190,9 +202,21 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
   setCanvasSize: (size) => set({ canvasSize: size }),
   setTubeParams: (params) =>
     set((state) => ({ tubeParams: { ...state.tubeParams, ...params } })),
-  setCenterpieceLogo: (logo) => set({ centerpieceLogo: logo }),
+  setCenterpieceLogo: (logo) => {
+    const prev = get().centerpieceLogo;
+    if (prev && "url" in prev && prev.url && prev.url.startsWith("blob:")) {
+      URL.revokeObjectURL(prev.url);
+    }
+    set({ centerpieceLogo: logo });
+  },
   setPreviewProgress: (progress) => set({ previewProgress: progress }),
-  setEasing: (easing) => set({ easing }),
+  setEasing: (easing) =>
+    set((state) => ({
+      easing,
+      templateParams: { ...state.templateParams, easing },
+    })),
   setPlaybackMode: (mode) => set({ playbackMode: mode }),
+  setDurationSeconds: (duration) =>
+    set({ durationSeconds: Math.max(0.5, Math.min(120, duration)) }),
 }));
 

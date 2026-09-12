@@ -2,33 +2,40 @@
 
 import Image from "next/image";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Environment, Loader, useGLTF, useTexture } from "@react-three/drei";
+import { useGLTF, useTexture } from "@react-three/drei";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useEditorStore } from "../store/editorStore";
 import { CenterpieceModel } from "./CenterpieceModel";
 import { TextLayer3D } from "./TextLayer3D";
 import type { TemplateSceneProps } from "../templates/types";
 import type { SlotAsset } from "../types/editor";
-import { DoubleSide, Object3D, Texture } from "three";
+import { DoubleSide, Object3D, Vector2 } from "three";
+import { useSceneBackgroundParams } from "../hooks/useSceneBackgroundParams";
+import { SceneBackground } from "./scene/SceneBackground";
+import { useDeterministicAngle } from "../hooks/useDeterministicAngle";
 
 function ImageTube({
   scrollTargetRef,
   spinVelocityRef,
   naturalDirRef,
   tubeAngleRef,
+  idleSpinEnabled,
   playbackMode = "interactive",
   progress = 0,
-  onImageHover,
-  onImageClick,
+  onHover,
+  onUnhover,
+  onClickProject,
 }: {
   scrollTargetRef: React.MutableRefObject<number>;
   spinVelocityRef: React.MutableRefObject<number>;
   naturalDirRef: React.MutableRefObject<number>;
   tubeAngleRef: React.MutableRefObject<number>;
+  idleSpinEnabled: React.MutableRefObject<boolean>;
   playbackMode?: "interactive" | "auto";
   progress?: number;
-  onImageHover: (projectName: string | null, texture: Texture | null, imageUrl: string | null) => void;
-  onImageClick: (projectName: string, imageUrl: string, textureIndex: number) => void;
+  onHover?: (name: string, imageUrl: string) => void;
+  onUnhover?: () => void;
+  onClickProject?: (name: string, imageUrl: string, index: number) => void;
 }) {
   const groupRef = useRef<Object3D>(null);
   const rowGroupRefs = useRef<Array<Object3D | null>>([]);
@@ -54,38 +61,23 @@ function ImageTube({
     [storeImages],
   );
 
-  const projectNames = useMemo(
-    () =>
-      storeImages.length > 0
-        ? storeImages.map((img) => img.name)
-        : [
-            "PROJECT ALPHA",
-            "PROJECT BETA",
-            "PROJECT GAMMA",
-            "PROJECT DELTA",
-            "PROJECT EPSILON",
-            "PROJECT ZETA",
-            "PROJECT ETA",
-          ],
-    [storeImages],
-  );
-
   const textures = useTexture(imageUrls);
 
-  const handleHover = useCallback(
-    (projectName: string | null, textureIndex: number | null) => {
-      isHovering.current = projectName !== null;
-      const texture =
-        textureIndex !== null
-          ? Array.isArray(textures)
-            ? textures[textureIndex % textures.length]
-            : textures
-          : null;
-      const imageUrl = textureIndex !== null ? imageUrls[textureIndex % imageUrls.length] : null;
-      onImageHover(projectName, texture, imageUrl);
-    },
-    [imageUrls, onImageHover, textures],
-  );
+  const projectNames = useMemo(() => {
+    if (storeImages.length > 0) {
+      return storeImages.map((img) => img.name);
+    }
+    const fileToName: Record<string, string> = {
+      "/tube/img1.jpg": "Golden Hour",
+      "/tube/img3.jpg": "Abstract Whispers",
+      "/tube/img2.jpg": "Velvet Dunes",
+      "/tube/img4.jpg": "Cyberpunk Neon",
+      "/tube/img5.jpg": "Crimson Canopy",
+      "/tube/img6.jpg": "Emerald Dawn",
+      "/tube/img9.jpg": "Oceanic Echoes",
+    };
+    return imageUrls.map((url) => fileToName[url] ?? url);
+  }, [storeImages, imageUrls]);
 
   const storeCount = useEditorStore((s) => s.templateParams.count);
   const count = typeof storeCount === "number" ? storeCount : 24;
@@ -119,10 +111,10 @@ function ImageTube({
     return out;
   }, [rows, totalRows, ySpacing]);
 
+  const autoProgress = useDeterministicAngle(angle, playbackMode, progress, 1.0);
+
   useFrame((_state, dt) => {
-    if (playbackMode === "auto") {
-      const totalRotations = 1.5;
-      angle.current = progress * Math.PI * 2 * totalRotations;
+    if (autoProgress()) {
       tubeAngleRef.current = angle.current;
 
       const group = groupRef.current;
@@ -155,7 +147,8 @@ function ImageTube({
     spinVelocityRef.current *= Math.pow(damping, dt * 60);
     spinVelocityRef.current = Math.max(-2.0, Math.min(2.0, spinVelocityRef.current));
 
-    const baseSpeed = naturalDirRef.current * 0.25 * speedMultiplier.current;
+    const storeBaseSpeed = (useEditorStore.getState().templateParams.baseSpeed as number) ?? 0;
+    const baseSpeed = idleSpinEnabled.current ? naturalDirRef.current * storeBaseSpeed * speedMultiplier.current : 0;
     angle.current += (baseSpeed + spinVelocityRef.current * speedMultiplier.current) * dt;
     tubeAngleRef.current = angle.current;
 
@@ -189,14 +182,31 @@ function ImageTube({
             const ry = -(theta + Math.PI / 2);
             const texIndex = (baseRow * cols + col) % imageUrls.length;
 
+            const name = projectNames[texIndex % projectNames.length];
+            const imageUrl = imageUrls[texIndex % imageUrls.length];
+
             return (
               <mesh
                 key={col}
                 position={[x, 0, z]}
                 rotation={[0, ry, 0]}
-                onPointerEnter={() => handleHover(projectNames[texIndex], texIndex)}
-                onPointerLeave={() => handleHover(null, null)}
-                onClick={() => onImageClick(projectNames[texIndex], imageUrls[texIndex], texIndex)}
+                onPointerOver={(e) => {
+                  if (playbackMode !== "interactive") return;
+                  e.stopPropagation();
+                  isHovering.current = true;
+                  onHover?.(name, imageUrl);
+                }}
+                onPointerOut={(e) => {
+                  if (playbackMode !== "interactive") return;
+                  e.stopPropagation();
+                  isHovering.current = false;
+                  onUnhover?.();
+                }}
+                onClick={(e) => {
+                  if (playbackMode !== "interactive") return;
+                  e.stopPropagation();
+                  onClickProject?.(name, imageUrl, texIndex);
+                }}
               >
                 <planeGeometry args={[tileW, tileH]} />
                 <meshBasicMaterial
@@ -214,13 +224,24 @@ function ImageTube({
 }
 
 export function RubensScene({ playbackMode = "interactive", progress = 0 }: TemplateSceneProps = {}) {
-  void playbackMode;
-  void progress;
   const containerRef = useRef<HTMLDivElement>(null);
+  const targetCenterUv = useRef(new Vector2(0.5, 0.5));
   const tubeScrollTarget = useRef(0);
   const tubeSpinVelocity = useRef(0);
   const tubeNaturalDir = useRef(1);
   const tubeAngle = useRef(0);
+  const idleSpinEnabled = useRef(true);
+
+  const easing = useEditorStore((s) => s.easing || (s.templateParams.easing as string) || "power1.inOut");
+
+  const bgParams = useSceneBackgroundParams();
+
+  const textFontSize = (useEditorStore((s) => s.templateParams.textFontSize) as number) ?? 0.6;
+  const textColor = (useEditorStore((s) => s.templateParams.textColor) as string) ?? "#e2ba80";
+  const textPositionX = (useEditorStore((s) => s.templateParams.textPositionX) as number) ?? 0;
+  const textPositionY = (useEditorStore((s) => s.templateParams.textPositionY) as number) ?? 0;
+  const textPositionZ = (useEditorStore((s) => s.templateParams.textPositionZ) as number) ?? 0.5;
+
   const [hoveredProject, setHoveredProject] = useState<string | null>(null);
   const [hoveredImageUrl, setHoveredImageUrl] = useState<string | null>(null);
   const [previousImageUrl, setPreviousImageUrl] = useState<string | null>(null);
@@ -264,58 +285,22 @@ export function RubensScene({ playbackMode = "interactive", progress = 0 }: Temp
     };
   }, []);
 
-  const onPointerEnter = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    cursorTarget.current = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-    cursorCurrent.current = { ...cursorTarget.current };
-    cursorActive.current = true;
+  const handleHover = useCallback((name: string, imageUrl: string) => {
+    setHoveredProject(name);
+    setPreviousImageUrl(hoveredImageUrl);
+    setHoveredImageUrl(imageUrl);
+  }, [hoveredImageUrl]);
+
+  const handleUnhover = useCallback(() => {
+    setHoveredProject(null);
+    setPreviousImageUrl(hoveredImageUrl);
+    setHoveredImageUrl(null);
+  }, [hoveredImageUrl]);
+
+  const handleClickProject = useCallback((name: string, imageUrl: string, index: number) => {
+    setSelectedProject({ name, imageUrl, index });
+    setShowOverlay(true);
   }, []);
-
-  const onPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    setCursorPos({ x: event.clientX, y: event.clientY });
-
-    const rect = event.currentTarget.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
-    cursorTarget.current = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-  }, []);
-
-  const onPointerLeave = useCallback(() => {
-    cursorActive.current = false;
-  }, []);
-
-  const onWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
-    if (playbackMode === "auto") return;
-    tubeScrollTarget.current += event.deltaY * 0.002;
-    tubeSpinVelocity.current += event.deltaY * 0.004;
-
-    if (event.deltaY < 0) tubeNaturalDir.current = -1;
-    else if (event.deltaY > 0) tubeNaturalDir.current = 1;
-  }, [playbackMode]);
-
-  const handleImageHover = useCallback(
-    (projectName: string | null, _texture: Texture | null, imageUrl: string | null) => {
-      if (playbackMode === "auto") return;
-      setHoveredProject(projectName);
-      if (imageUrl !== hoveredImageUrl) {
-        setPreviousImageUrl(hoveredImageUrl);
-        setHoveredImageUrl(imageUrl);
-      }
-    },
-    [hoveredImageUrl, playbackMode],
-  );
-
-  const handleImageClick = useCallback(
-    (projectName: string, imageUrl: string, textureIndex: number) => {
-      if (playbackMode === "auto") return;
-      setSelectedProject({ name: projectName, imageUrl, index: textureIndex });
-
-      if (openOverlayTimeoutRef.current != null) window.clearTimeout(openOverlayTimeoutRef.current);
-      openOverlayTimeoutRef.current = window.setTimeout(() => {
-        setShowOverlay(true);
-      }, 1500);
-    },
-    [playbackMode],
-  );
 
   const handleCloseProject = useCallback(() => {
     setShowOverlay(false);
@@ -336,9 +321,11 @@ export function RubensScene({ playbackMode = "interactive", progress = 0 }: Temp
   }, [hoveredImageUrl, previousImageUrl]);
 
   useEffect(() => {
+    const openTimeout = openOverlayTimeoutRef.current;
+    const closeTimeout = closeOverlayTimeoutRef.current;
     return () => {
-      if (openOverlayTimeoutRef.current != null) window.clearTimeout(openOverlayTimeoutRef.current);
-      if (closeOverlayTimeoutRef.current != null) window.clearTimeout(closeOverlayTimeoutRef.current);
+      if (openTimeout != null) window.clearTimeout(openTimeout);
+      if (closeTimeout != null) window.clearTimeout(closeTimeout);
     };
   }, []);
 
@@ -350,22 +337,36 @@ export function RubensScene({ playbackMode = "interactive", progress = 0 }: Temp
 
   return (
     <div
-      className="sceneRoot"
+      className={`sceneRoot ${bgParams.transparentBackground ? "sceneRoot--transparent" : ""}`}
       ref={containerRef}
-      onPointerEnter={playbackMode === "auto" ? undefined : onPointerEnter}
-      onPointerMove={playbackMode === "auto" ? undefined : onPointerMove}
-      onPointerLeave={playbackMode === "auto" ? undefined : onPointerLeave}
-      onWheel={onWheel}
+      style={{ pointerEvents: playbackMode === "interactive" ? "auto" : "none" }}
+      onPointerMove={(e) => {
+        if (playbackMode !== "interactive") return;
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        cursorTarget.current = { x, y };
+        setCursorPos({ x, y });
+        targetCenterUv.current.set(x / rect.width, 1.0 - y / rect.height);
+      }}
+      onPointerEnter={() => {
+        if (playbackMode !== "interactive") return;
+        cursorActive.current = true;
+      }}
+      onPointerLeave={() => {
+        if (playbackMode !== "interactive") return;
+        cursorActive.current = false;
+        handleUnhover();
+      }}
     >
-      <h1 className="main-title">{textAsset?.content || "RUBENS EXPERIENCE"}</h1>
-
-      {previousImageUrl && (
+      {!bgParams.transparentBackground && previousImageUrl && (
         <div
           className="background-image-blur background-image-previous"
           style={{ backgroundImage: `url(${previousImageUrl})` }}
         />
       )}
-      {hoveredImageUrl && (
+      {!bgParams.transparentBackground && hoveredImageUrl && (
         <div
           className="background-image-blur background-image-current"
           style={{ backgroundImage: `url(${hoveredImageUrl})` }}
@@ -377,26 +378,30 @@ export function RubensScene({ playbackMode = "interactive", progress = 0 }: Temp
         gl={{ antialias: true, powerPreference: "high-performance", alpha: true, preserveDrawingBuffer: true }}
         dpr={[1, 2]}
         frameloop="always"
-        onCreated={({ camera, gl }) => {
+        onCreated={({ camera }) => {
           camera.lookAt(0, 0, 0);
-          gl.setClearColor(0x000000, 0);
         }}
       >
         <Suspense fallback={null}>
-          <ambientLight intensity={0.5} />
-          <directionalLight position={[5, 5, 5]} intensity={1} />
-
-          <Environment preset="studio" blur={10.5} />
+          <SceneBackground
+            {...bgParams}
+            targetCenterUv={targetCenterUv}
+            progress={progress}
+            playbackMode={playbackMode}
+            easing={easing}
+          />
 
           <ImageTube
             scrollTargetRef={tubeScrollTarget}
             spinVelocityRef={tubeSpinVelocity}
             naturalDirRef={tubeNaturalDir}
             tubeAngleRef={tubeAngle}
+            idleSpinEnabled={idleSpinEnabled}
             playbackMode={playbackMode}
             progress={progress}
-            onImageHover={handleImageHover}
-            onImageClick={handleImageClick}
+            onHover={handleHover}
+            onUnhover={handleUnhover}
+            onClickProject={handleClickProject}
           />
 
           <CenterpieceModel
@@ -412,13 +417,13 @@ export function RubensScene({ playbackMode = "interactive", progress = 0 }: Temp
             angleRef={tubeAngle}
           />
 
-          {textAsset && textAsset.content && (
+          {textAsset?.content && (
             <TextLayer3D
               content={textAsset.content}
-              fontUrl={textAsset.fontUrl}
-              position={[0, -2.4, 0.5]}
-              color="#e2ba80"
-              fontSize={0.45}
+              fontUrl={textAsset?.fontUrl}
+              position={[textPositionX, textPositionY, textPositionZ]}
+              color={textColor}
+              fontSize={textFontSize}
             />
           )}
         </Suspense>
@@ -439,21 +444,13 @@ export function RubensScene({ playbackMode = "interactive", progress = 0 }: Temp
               width={1200}
               height={800}
               sizes="(max-width: 768px) 90vw, 700px"
+              referrerPolicy="no-referrer"
               style={{ width: "100%", height: "auto" }}
             />
             <h1>{selectedProject.name}</h1>
-            <p>Description du projet {selectedProject.name}</p>
           </div>
         </div>
       )}
-
-      <div className="project-info">
-        <div className="info-left">
-          <div className="brand">#RUBENS</div>
-          <div className="tagline">#WEBGL</div>
-          <div className="tech">BY MATD.EV</div>
-        </div>
-      </div>
 
       {hoveredProject && hoveredImageUrl && (
         <div
@@ -470,7 +467,6 @@ export function RubensScene({ playbackMode = "interactive", progress = 0 }: Temp
 
       <div className="whiteEdgeGradient" aria-hidden="true" />
       <div className="customCursor" ref={cursorElRef} aria-hidden="true" />
-      <Loader />
     </div>
   );
 }

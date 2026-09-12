@@ -4,6 +4,7 @@ import type { SlotAsset } from "../../types/editor";
 import { ImageLibrary } from "./ImageLibrary";
 import { LogoUploader } from "./LogoUploader";
 import { useEditorStore } from "../../store/editorStore";
+import { FolderKanban, Type, Upload, X } from "lucide-react";
 
 function TextSlotControl({ slot }: { slot: AssetSlot }) {
   const assetsBySlot = useEditorStore((s) => s.assetsBySlot);
@@ -76,9 +77,9 @@ function TextSlotControl({ slot }: { slot: AssetSlot }) {
 
       <div className="fontUploadSection">
         <label className="fontUploadLabel">
-          <span className="fontUploadIcon">🔤</span>
+          <Type size={14} className="fontUploadIcon" />
           <span className="fontUploadText">
-            {fontName ? `Font: ${fontName}` : "Upload Brand Font (.woff, .ttf)"}
+            {fontName ? `Font: ${fontName}` : "Custom Font (.woff, .ttf)"}
           </span>
           <input
             id={`font-upload-${slot.id}`}
@@ -87,6 +88,7 @@ function TextSlotControl({ slot }: { slot: AssetSlot }) {
             onChange={handleFontUpload}
             className="fontFileInput"
           />
+          <Upload size={12} className="fontUploadTrailingIcon" />
         </label>
         {fontName && (
           <button
@@ -95,7 +97,7 @@ function TextSlotControl({ slot }: { slot: AssetSlot }) {
             className="removeFontBtn"
             title="Reset font"
           >
-            ✕
+            <X size={14} />
           </button>
         )}
       </div>
@@ -104,10 +106,13 @@ function TextSlotControl({ slot }: { slot: AssetSlot }) {
 }
 
 export function AssetPanel({ slots }: { slots: AssetSlot[] }) {
+  if (!slots || slots.length === 0) return null;
+
   return (
     <div id="asset-panel-container" className="assetPanel">
       <div className="assetPanelHeader">
-        <h3 className="assetPanelTitle">Assets</h3>
+        <span className="assetPanelTitle">Assets</span>
+        <FolderKanban size={14} className="sidebarSectionIcon" />
       </div>
       <div className="assetSlotsList">
         {slots.map((slot) => (
@@ -115,7 +120,7 @@ export function AssetPanel({ slots }: { slots: AssetSlot[] }) {
             <div className="assetSlotHeader">
               <span className="assetSlotLabel">{slot.label}</span>
               <span className="assetSlotBadge">
-                {slot.type} {slot.multiple ? "(multi)" : "(single)"}
+                {slot.type} {slot.multiple ? "• multi" : ""}
               </span>
             </div>
 
@@ -137,7 +142,7 @@ export function AssetPanel({ slots }: { slots: AssetSlot[] }) {
 
             {slot.type === "logo" && (
               <div className="assetSlotContent">
-                <p className="assetSlotHelp">Upload SVG or transparent PNG for 3D extrusion</p>
+                <p className="assetSlotHelp">SVG/PNG for 3D-extruded logos, or upload a .glb model or photo to use directly</p>
                 <LogoUploader />
               </div>
             )}

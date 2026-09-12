@@ -1,7 +1,7 @@
 "use client";
 
-import { Environment, Loader, useGLTF, useTexture } from "@react-three/drei";
-import { Canvas, type ThreeEvent, useFrame } from "@react-three/fiber";
+import { useGLTF, useTexture } from "@react-three/drei";
+import { Canvas, useFrame } from "@react-three/fiber";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useEditorStore } from "../store/editorStore";
 import { CenterpieceModel } from "./CenterpieceModel";
@@ -11,11 +11,12 @@ import type { SlotAsset } from "../types/editor";
 import { useVideoTexture } from "../lib/videoTexture";
 import {
   DoubleSide,
-  Mesh,
   Object3D,
-  ShaderMaterial,
   Vector2,
 } from "three";
+import { useSceneBackgroundParams } from "../hooks/useSceneBackgroundParams";
+import { SceneBackground } from "./scene/SceneBackground";
+import { useDeterministicAngle } from "../hooks/useDeterministicAngle";
 
 function VideoMaterial({ url }: { url: string }) {
   const texture = useVideoTexture(url);
@@ -39,106 +40,6 @@ function TileMaterial({ asset }: { asset: { kind: "image" | "video"; url: string
   );
 }
 
-function GridPlane({
-  targetCenterUv,
-}: {
-  targetCenterUv: React.MutableRefObject<Vector2>;
-}) {
-  const meshRef = useRef<Mesh>(null);
-  const uniforms = useMemo(
-    () => ({
-      uGridScale: { value: 28.0 },
-      uLineWidth: { value: 0.5 },
-      uEdgeWidth: { value: 0.14 },
-      uEdgeAmp: { value: 1.35 },
-      uCenterRadius: { value: 0.22 },
-      uCenterAmp: { value: 0.9 },
-      uCenter: { value: new Vector2(0.5, 0.5) },
-      uTime: { value: 0.0 },
-      uScrollSpeed: { value: 0.01 },
-      uResolution: { value: new Vector2(1, 1) },
-    }),
-    [],
-  );
-
-  useFrame((state) => {
-    const mesh = meshRef.current;
-    if (!mesh) return;
-    const material = mesh.material as ShaderMaterial;
-
-    material.uniforms.uTime.value = state.clock.getElapsedTime();
-    (material.uniforms.uCenter.value as Vector2).lerp(targetCenterUv.current, 0.08);
-  });
-
-  return (
-    <mesh ref={meshRef} position={[0, 0, -5.2]}>
-      <planeGeometry args={[18, 18, 512, 512]} />
-      <shaderMaterial
-        attach="material"
-        args={[
-          {
-            uniforms,
-            vertexShader: `
-                varying vec2 vUv;
-                
-                uniform float uEdgeWidth;
-                uniform float uEdgeAmp;
-                uniform float uCenterRadius;
-                uniform float uCenterAmp;
-                uniform vec2 uCenter;
-
-                void main() {
-                  vUv = uv;
-
-                  vec3 p = position;
-
-                  float dEdge = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));
-                  float edgeMask = 1.0 - smoothstep(0.0, uEdgeWidth, dEdge);
-
-                  float dCenter = distance(vUv, uCenter);
-                  float centerMask = 1.0 - smoothstep(0.0, uCenterRadius, dCenter);
-
-                  float zOffset = edgeMask * uEdgeAmp + centerMask * uCenterAmp;
-                  p.z += zOffset;
-
-                  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-                }
-              `,
-            fragmentShader: `
-                varying vec2 vUv;
-                
-                uniform float uGridScale;
-                uniform float uLineWidth;
-                uniform float uTime;
-                uniform float uScrollSpeed;
-                uniform vec2 uResolution;
-
-                float gridLine(float coord, float width) {
-                  float fw = fwidth(coord);
-                  float p = abs(fract(coord - 0.5) - 0.5);
-                  return 1.0 - smoothstep(width * fw, (width + 1.0) * fw, p);
-                }
-
-                void main() {
-                  vec2 uv = (vUv + vec2(uTime * uScrollSpeed, 0.0)) * uGridScale;
-                  float gx = gridLine(uv.x, uLineWidth);
-                  float gy = gridLine(uv.y, uLineWidth);
-                  float g = max(gx, gy);
-
-                  vec3 base = vec3(0.);
-                  vec3 line = vec3(0.1);
-                  vec3 col = mix(base, line, g);
-                  gl_FragColor = vec4(col, 1.);
-                }
-              `,
-            side: DoubleSide,
-          },
-        ]}
-      />
-    </mesh>
-  );
-}
-
 function ImageTube({
   scrollTargetRef,
   spinVelocityRef,
@@ -147,14 +48,14 @@ function ImageTube({
   rotationSpeedScaleTargetRef,
   rotationSpeedScaleLerpRef,
   baseSpeedRef,
+  idleSpinEnabled,
   playbackMode = "interactive",
   progress = 0,
   rows,
   cols,
   radius,
-  onHoverStart,
-  onHoverMove,
-  onHoverEnd,
+  onHover,
+  onUnhover,
 }: {
   scrollTargetRef: React.MutableRefObject<number>;
   spinVelocityRef: React.MutableRefObject<number>;
@@ -163,14 +64,14 @@ function ImageTube({
   rotationSpeedScaleTargetRef: React.MutableRefObject<number>;
   rotationSpeedScaleLerpRef: React.MutableRefObject<number>;
   baseSpeedRef: React.MutableRefObject<number>;
+  idleSpinEnabled: React.MutableRefObject<boolean>;
   playbackMode?: "interactive" | "auto";
   progress?: number;
   rows: number;
   cols: number;
   radius: number;
-  onHoverStart: (projectName: string, event: ThreeEvent<PointerEvent>) => void;
-  onHoverMove: (event: ThreeEvent<PointerEvent>) => void;
-  onHoverEnd: () => void;
+  onHover?: (name: string) => void;
+  onUnhover?: () => void;
 }) {
   const groupRef = useRef<Object3D>(null);
   const rowGroupRefs = useRef<Array<Object3D | null>>([]);
@@ -230,11 +131,10 @@ function ImageTube({
       return out;
     }, [rows, totalRows, ySpacing]);
 
+    const autoProgress = useDeterministicAngle(angle, playbackMode, progress, 1.0);
+
     useFrame((_state, dt) => {
-      if (playbackMode === "auto") {
-        // Deterministic: angle is a pure function of progress, not accumulated physics.
-        const totalRotations = 1.5; // tune per template — how many full spins over the clip
-        angle.current = progress * Math.PI * 2 * totalRotations;
+      if (autoProgress()) {
         tubeAngleRef.current = angle.current;
 
         const group = groupRef.current;
@@ -270,7 +170,7 @@ function ImageTube({
 
       const scaledDt = dt * rotationSpeedScale.current;
 
-      const baseSpeed = naturalDirRef.current * baseSpeedRef.current;
+      const baseSpeed = idleSpinEnabled.current ? naturalDirRef.current * baseSpeedRef.current : 0;
       angle.current += (baseSpeed + spinVelocityRef.current) * scaledDt;
 
       tubeAngleRef.current = angle.current;
@@ -304,7 +204,8 @@ function ImageTube({
               const ry = -(theta + Math.PI / 2);
               const assetIndex = (baseRow * cols + col) % tubeAssets.length;
               const asset = tubeAssets[assetIndex];
-              const projectName = asset.name;
+
+              const name = asset.name || `Project ${assetIndex + 1}`;
 
               return (
                 <mesh
@@ -312,16 +213,14 @@ function ImageTube({
                   position={[x, 0, z]}
                   rotation={[0, ry, 0]}
                   onPointerOver={(e) => {
+                    if (playbackMode !== "interactive") return;
                     e.stopPropagation();
-                    onHoverStart(projectName, e);
-                  }}
-                  onPointerMove={(e) => {
-                    e.stopPropagation();
-                    onHoverMove(e);
+                    onHover?.(name);
                   }}
                   onPointerOut={(e) => {
+                    if (playbackMode !== "interactive") return;
                     e.stopPropagation();
-                    onHoverEnd();
+                    onUnhover?.();
                   }}
                 >
                   <planeGeometry args={[tileW, tileH]} />
@@ -336,19 +235,22 @@ function ImageTube({
   }
 
 export function FiberScene({ playbackMode = "interactive", progress = 0 }: TemplateSceneProps = {}) {
-  void playbackMode;
-  void progress;
   const containerRef = useRef<HTMLDivElement>(null);
   const targetCenterUv = useRef(new Vector2(0.5, 0.5));
   const tubeScrollTarget = useRef(0);
   const tubeSpinVelocity = useRef(0);
   const tubeNaturalDir = useRef(1);
   const tubeAngle = useRef(0);
+  const idleSpinEnabled = useRef(false);
+
+  const easing = useEditorStore((s) => s.easing || (s.templateParams.easing as string) || "power1.inOut");
 
   const tubeRows = (useEditorStore((s) => s.templateParams.rows) as number) ?? 5;
   const tubeCols = (useEditorStore((s) => s.templateParams.cols) as number) ?? 12;
   const tubeRadius = (useEditorStore((s) => s.templateParams.radius) as number) ?? 4;
   const baseSpeed = (useEditorStore((s) => s.templateParams.baseSpeed) as number) ?? 0.25;
+
+  const bgParams = useSceneBackgroundParams();
 
   const baseSpeedRef = useRef(0.25);
 
@@ -360,6 +262,11 @@ export function FiberScene({ playbackMode = "interactive", progress = 0 }: Templ
   const rotationSpeedScaleTargetRef = useRef(1);
   const rotationSpeedScaleLerpRef = useRef(0.12);
 
+  const isDraggingRef = useRef(false);
+  const dragLastXRef = useRef(0);
+  const dragLastYRef = useRef(0);
+  const dragLastTRef = useRef(0);
+
   const assetsBySlot = useEditorStore((s) => s.assetsBySlot);
   const textAsset = useMemo(() => {
     const assets = assetsBySlot["text"] || assetsBySlot["title"] || [];
@@ -367,6 +274,18 @@ export function FiberScene({ playbackMode = "interactive", progress = 0 }: Templ
   }, [assetsBySlot]);
 
   const [hoveredProject, setHoveredProject] = useState<string | null>(null);
+
+  const handleHover = useCallback((name: string) => {
+    setHoveredProject(name);
+    if (hoverSlowdownEnabledRef.current) {
+      rotationSpeedScaleTargetRef.current = hoverSlowdownScaleRef.current;
+    }
+  }, []);
+
+  const handleUnhover = useCallback(() => {
+    setHoveredProject(null);
+    rotationSpeedScaleTargetRef.current = 1;
+  }, []);
 
     const tooltipElRef = useRef<HTMLDivElement | null>(null);
     const tooltipTarget = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -430,98 +349,89 @@ export function FiberScene({ playbackMode = "interactive", progress = 0 }: Templ
       };
     }, []);
 
-    const onImageHoverStart = useCallback(
-      (projectName: string, event: ThreeEvent<PointerEvent>) => {
-        setHoveredProject(projectName);
-        setTooltipFromClientPoint(event.nativeEvent.clientX, event.nativeEvent.clientY);
-
-        if (hoverSlowdownEnabledRef.current) {
-          rotationSpeedScaleTargetRef.current = hoverSlowdownScaleRef.current;
-        }
-
-        tooltipCurrent.current = { ...tooltipTarget.current };
-      },
-      [setTooltipFromClientPoint],
-    );
-
-    const onImageHoverMove = useCallback(
-      (event: ThreeEvent<PointerEvent>) => {
-        setTooltipFromClientPoint(event.nativeEvent.clientX, event.nativeEvent.clientY);
-      },
-      [setTooltipFromClientPoint],
-    );
-
-    const onImageHoverEnd = useCallback(() => {
-      setHoveredProject(null);
-      rotationSpeedScaleTargetRef.current = 1;
-    }, []);
-
-    const onPointerEnter = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-      const rect = event.currentTarget.getBoundingClientRect();
-      cursorTarget.current = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-      cursorCurrent.current = { ...cursorTarget.current };
-      cursorActive.current = true;
-    }, []);
-
-  const onPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-      const rect = event.currentTarget.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return;
-
-      cursorTarget.current = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-
-      const nx = (event.clientX - rect.left) / rect.width;
-      const ny = (event.clientY - rect.top) / rect.height;
-      const clampedX = Math.min(1, Math.max(0, nx));
-      const clampedY = Math.min(1, Math.max(0, ny));
-
-      const uvX = clampedX;
-      const uvY = 1 - clampedY;
-
-      const strength = 0.4;
-      const cx = 0.5 + (uvX - 0.5) * strength;
-      const cy = 0.5 + (uvY - 0.5) * strength;
-
-    targetCenterUv.current.set(Math.min(1, Math.max(0, cx)), Math.min(1, Math.max(0, cy)));
-  }, []);
-
-    const onPointerLeave = useCallback(() => {
-      targetCenterUv.current.set(0.5, 0.5);
-      onImageHoverEnd();
-      cursorActive.current = false;
-    }, [onImageHoverEnd]);
-
-    const onWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
-      if (playbackMode === "auto") return;
-      tubeScrollTarget.current += event.deltaY * 0.002;
-      tubeSpinVelocity.current += event.deltaY * 0.004;
-
-      if (event.deltaY < 0) tubeNaturalDir.current = -1;
-      else if (event.deltaY > 0) tubeNaturalDir.current = 1;
-    }, [playbackMode]);
+    const textFontSize = (useEditorStore((s) => s.templateParams.textFontSize) as number) ?? 0.6;
+    const textColor = (useEditorStore((s) => s.templateParams.textColor) as string) ?? "#ffffff";
+    const textPositionX = (useEditorStore((s) => s.templateParams.textPositionX) as number) ?? 0;
+    const textPositionY = (useEditorStore((s) => s.templateParams.textPositionY) as number) ?? 0;
+    const textPositionZ = (useEditorStore((s) => s.templateParams.textPositionZ) as number) ?? 0.5;
 
     return (
       <div
-        className="sceneRoot"
+        className={`sceneRoot ${bgParams.transparentBackground ? "sceneRoot--transparent" : ""}`}
         ref={containerRef}
-        onPointerEnter={playbackMode === "auto" ? undefined : onPointerEnter}
-        onPointerMove={playbackMode === "auto" ? undefined : onPointerMove}
-        onPointerLeave={playbackMode === "auto" ? undefined : onPointerLeave}
-        onWheel={onWheel}
+        style={{ pointerEvents: playbackMode === "interactive" ? "auto" : "none" }}
+        onPointerDown={(e) => {
+          if (playbackMode !== "interactive") return;
+          isDraggingRef.current = true;
+          dragLastXRef.current = e.clientX;
+          dragLastYRef.current = e.clientY;
+          dragLastTRef.current = performance.now();
+          (containerRef.current as HTMLElement).setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          if (playbackMode !== "interactive") return;
+          const rect = containerRef.current?.getBoundingClientRect();
+          if (!rect) return;
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          cursorTarget.current = { x, y };
+          setTooltipFromClientPoint(e.clientX, e.clientY);
+          targetCenterUv.current.set(x / rect.width, 1.0 - y / rect.height);
+
+          if (isDraggingRef.current) {
+            const now = performance.now();
+            const dt = now - dragLastTRef.current;
+            const dx = e.clientX - dragLastXRef.current;
+            const dy = e.clientY - dragLastYRef.current;
+            dragLastXRef.current = e.clientX;
+            dragLastYRef.current = e.clientY;
+            dragLastTRef.current = now;
+
+            if (dt > 0) {
+              tubeSpinVelocity.current = (dx / dt) * 15;
+            }
+            tubeScrollTarget.current -= dy * 0.01;
+          }
+        }}
+        onPointerUp={(e) => {
+          if (playbackMode !== "interactive") return;
+          isDraggingRef.current = false;
+          try {
+            (containerRef.current as HTMLElement).releasePointerCapture(e.pointerId);
+          } catch {}
+        }}
+        onPointerCancel={(e) => {
+          if (playbackMode !== "interactive") return;
+          isDraggingRef.current = false;
+          try {
+            (containerRef.current as HTMLElement).releasePointerCapture(e.pointerId);
+          } catch {}
+        }}
+        onPointerEnter={() => {
+          if (playbackMode !== "interactive") return;
+          cursorActive.current = true;
+        }}
+        onPointerLeave={() => {
+          if (playbackMode !== "interactive") return;
+          cursorActive.current = false;
+          handleUnhover();
+        }}
       >
         <Canvas
-          gl={{ preserveDrawingBuffer: true }}
+          gl={{ alpha: true, preserveDrawingBuffer: true, antialias: true }}
           camera={{ position: [0, 0, 6.5], fov: 50 }}
           onCreated={({ camera }) => {
             camera.lookAt(0, 0, 0);
           }}
         >
           <Suspense fallback={null}>
-            <ambientLight intensity={0.5} />
-            <directionalLight position={[5, 5, 5]} intensity={1} />
-
-            <Environment preset="studio" blur={10.5} />
-
-            <GridPlane targetCenterUv={targetCenterUv} />
+            <SceneBackground
+              {...bgParams}
+              targetCenterUv={targetCenterUv}
+              progress={progress}
+              playbackMode={playbackMode}
+              easing={easing}
+            />
 
             <ImageTube
               scrollTargetRef={tubeScrollTarget}
@@ -531,14 +441,14 @@ export function FiberScene({ playbackMode = "interactive", progress = 0 }: Templ
               rotationSpeedScaleTargetRef={rotationSpeedScaleTargetRef}
               rotationSpeedScaleLerpRef={rotationSpeedScaleLerpRef}
               baseSpeedRef={baseSpeedRef}
+              idleSpinEnabled={idleSpinEnabled}
               playbackMode={playbackMode}
               progress={progress}
               rows={tubeRows}
               cols={tubeCols}
               radius={tubeRadius}
-              onHoverStart={onImageHoverStart}
-              onHoverMove={onImageHoverMove}
-              onHoverEnd={onImageHoverEnd}
+              onHover={handleHover}
+              onUnhover={handleUnhover}
             />
 
             <CenterpieceModel
@@ -559,13 +469,13 @@ export function FiberScene({ playbackMode = "interactive", progress = 0 }: Templ
               angleRef={tubeAngle}
             />
 
-            {textAsset && textAsset.content && (
+            {textAsset?.content && (
               <TextLayer3D
                 content={textAsset.content}
-                fontUrl={textAsset.fontUrl}
-                position={[0, -2.4, 0.5]}
-                color="#ffffff"
-                fontSize={0.45}
+                fontUrl={textAsset?.fontUrl}
+                position={[textPositionX, textPositionY, textPositionZ]}
+                color={textColor}
+                fontSize={textFontSize}
               />
             )}
           </Suspense>
@@ -584,7 +494,6 @@ export function FiberScene({ playbackMode = "interactive", progress = 0 }: Templ
         )}
 
         <div className="customCursor" ref={cursorElRef} aria-hidden="true" />
-        <Loader />
       </div>
     );
 }

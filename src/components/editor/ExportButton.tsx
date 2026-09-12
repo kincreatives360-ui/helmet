@@ -2,13 +2,14 @@
 import { useState } from "react";
 import { useEditorStore } from "../../store/editorStore";
 import { exportVideoClientSide } from "../../lib/clientExport";
+import { Download, Loader2 } from "lucide-react";
 
 export function ExportButton({
   templateId,
-  durationSeconds,
+  durationSeconds: fallbackDuration,
 }: {
   templateId: string;
-  durationSeconds: number;
+  durationSeconds?: number;
 }) {
   const [isExporting, setIsExporting] = useState(false);
   const [exportPercent, setExportPercent] = useState<number>(0);
@@ -16,6 +17,10 @@ export function ExportButton({
 
   const setPreviewProgress = useEditorStore((s) => s.setPreviewProgress);
   const setPlaybackMode = useEditorStore((s) => s.setPlaybackMode);
+  const canvasSize = useEditorStore((s) => s.canvasSize);
+  const storeDuration = useEditorStore((s) => s.durationSeconds);
+
+  const activeDuration = storeDuration ?? fallbackDuration ?? 5;
 
   const handleExport = async () => {
     if (isExporting) return;
@@ -36,9 +41,11 @@ export function ExportButton({
     try {
       await exportVideoClientSide({
         canvas,
-        durationSeconds,
+        durationSeconds: activeDuration,
         fps: 30,
         filename: `${templateId}-export.mp4`,
+        width: canvasSize.width,
+        height: canvasSize.height,
         setProgress: (p: number) => {
           setExportPercent(Math.round(p * 100));
           setStatusMessage(`Rendering frames... ${Math.round(p * 100)}%`);
@@ -80,8 +87,12 @@ export function ExportButton({
         onClick={handleExport}
         className="exportButton"
       >
-        <span className="exportIcon">🎬</span>
-        <span>{isExporting ? `Exporting (${exportPercent}%)` : `Export Video (${durationSeconds}s)`}</span>
+        {isExporting ? (
+          <Loader2 size={15} className="exportBtnSpinner" />
+        ) : (
+          <Download size={15} className="exportBtnIcon" />
+        )}
+        <span>{isExporting ? `Exporting (${exportPercent}%)` : `Export Video (${activeDuration}s)`}</span>
       </button>
 
       {isExporting && (
@@ -96,7 +107,7 @@ export function ExportButton({
       {statusMessage && <div className="exportStatus">{statusMessage}</div>}
 
       <div className="exportCaveatNote">
-        <span>⚡ <strong>Client-side export:</strong> Renders directly in your browser. Best for quick local test clips.</span>
+        <span>⚡ <strong>Client-side export:</strong> Renders directly in your browser.</span>
       </div>
     </div>
   );

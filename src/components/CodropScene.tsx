@@ -1,7 +1,7 @@
 "use client";
 
-import { Canvas, type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
-import { Environment, Loader, useGLTF, useTexture } from "@react-three/drei";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { useGLTF, useTexture } from "@react-three/drei";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useEditorStore } from "../store/editorStore";
 import { CenterpieceModel } from "./CenterpieceModel";
@@ -10,11 +10,12 @@ import type { TemplateSceneProps } from "../templates/types";
 import type { SlotAsset } from "../types/editor";
 import {
   DoubleSide,
-  Mesh,
   Object3D,
-  ShaderMaterial,
   Vector2,
 } from "three";
+import { useSceneBackgroundParams } from "../hooks/useSceneBackgroundParams";
+import { SceneBackground } from "./scene/SceneBackground";
+import { useDeterministicAngle } from "../hooks/useDeterministicAngle";
 
 function AlwaysInvalidate() {
   const invalidate = useThree((state) => state.invalidate);
@@ -34,106 +35,6 @@ function AlwaysInvalidate() {
   return null;
 }
 
-function GridPlaneLight({
-  targetCenterUv,
-}: {
-  targetCenterUv: React.MutableRefObject<Vector2>;
-}) {
-  const meshRef = useRef<Mesh>(null);
-  const uniforms = useMemo(
-    () => ({
-      uGridScale: { value: 28.0 },
-      uLineWidth: { value: 0.5 },
-      uEdgeWidth: { value: 0.14 },
-      uEdgeAmp: { value: 1.35 },
-      uCenterRadius: { value: 0.22 },
-      uCenterAmp: { value: 0.9 },
-      uCenter: { value: new Vector2(0.5, 0.5) },
-      uTime: { value: 0.0 },
-      uScrollSpeed: { value: 0.01 },
-      uResolution: { value: new Vector2(1, 1) },
-    }),
-    [],
-  );
-
-  useFrame((state) => {
-    const mesh = meshRef.current;
-    if (!mesh) return;
-    const material = mesh.material as ShaderMaterial;
-
-    material.uniforms.uTime.value = state.clock.getElapsedTime();
-    (material.uniforms.uCenter.value as Vector2).lerp(targetCenterUv.current, 0.08);
-  });
-
-  return (
-    <mesh ref={meshRef} position={[0, 0, -5.2]}>
-      <planeGeometry args={[18, 18, 512, 512]} />
-      <shaderMaterial
-        attach="material"
-        args={[
-          {
-            uniforms,
-              vertexShader: `
-              varying vec2 vUv;
-              
-              uniform float uEdgeWidth;
-              uniform float uEdgeAmp;
-              uniform float uCenterRadius;
-              uniform float uCenterAmp;
-              uniform vec2 uCenter;
-
-              void main() {
-                vUv = uv;
-
-                vec3 p = position;
-
-                float dEdge = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));
-                float edgeMask = 1.0 - smoothstep(0.0, uEdgeWidth, dEdge);
-
-                float dCenter = distance(vUv, uCenter);
-                float centerMask = 1.0 - smoothstep(0.0, uCenterRadius, dCenter);
-
-                float zOffset = edgeMask * uEdgeAmp + centerMask * uCenterAmp;
-                p.z += zOffset;
-
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-              }
-            `,
-              fragmentShader: `
-              varying vec2 vUv;
-              
-              uniform float uGridScale;
-              uniform float uLineWidth;
-              uniform float uTime;
-              uniform float uScrollSpeed;
-              uniform vec2 uResolution;
-
-              float gridLine(float coord, float width) {
-                float fw = fwidth(coord);
-                float p = abs(fract(coord - 0.5) - 0.5);
-                return 1.0 - smoothstep(width * fw, (width + 1.0) * fw, p);
-              }
-
-              void main() {
-                vec2 uv = (vUv + vec2(uTime * uScrollSpeed, 0.0)) * uGridScale;
-                float gx = gridLine(uv.x, uLineWidth);
-                float gy = gridLine(uv.y, uLineWidth);
-                float g = max(gx, gy);
-
-                vec3 base = vec3(1.0);
-                vec3 line = vec3(0.0);
-                vec3 col = mix(base, line, g * 0.18);
-                gl_FragColor = vec4(col, 1.0);
-              }
-            `,
-            side: DoubleSide,
-          },
-        ]}
-      />
-    </mesh>
-  );
-}
-
 function ImageSphere({
   spinVelocityXRef,
   spinVelocityYRef,
@@ -146,9 +47,8 @@ function ImageSphere({
   playbackMode = "interactive",
   progress = 0,
   onTileDirs,
-  onHoverStart,
-  onHoverMove,
-  onHoverEnd,
+  onHover,
+  onUnhover,
 }: {
   spinVelocityXRef: React.MutableRefObject<number>;
   spinVelocityYRef: React.MutableRefObject<number>;
@@ -161,9 +61,8 @@ function ImageSphere({
   playbackMode?: "interactive" | "auto";
   progress?: number;
   onTileDirs: (dirs: Array<{ x: number; y: number; z: number }>) => void;
-  onHoverStart: (projectName: string, event: ThreeEvent<PointerEvent>) => void;
-  onHoverMove: (event: ThreeEvent<PointerEvent>) => void;
-  onHoverEnd: () => void;
+  onHover?: (name: string) => void;
+  onUnhover?: () => void;
 }) {
   const groupRef = useRef<Object3D>(null);
 
@@ -234,11 +133,11 @@ function ImageSphere({
     [wrapPi],
   );
 
+  const autoProgress = useDeterministicAngle(angleYRef, playbackMode, progress, 1.0);
+
   useFrame((_state, dt) => {
-    if (playbackMode === "auto") {
-      const totalRotations = 1.0;
+    if (autoProgress()) {
       angleXRef.current = 0;
-      angleYRef.current = progress * Math.PI * 2 * totalRotations;
       const group = groupRef.current;
       if (group) {
         group.rotation.x = angleXRef.current;
@@ -254,8 +153,10 @@ function ImageSphere({
     spinVelocityXRef.current = Math.max(-3.0, Math.min(3.0, spinVelocityXRef.current));
     spinVelocityYRef.current = Math.max(-3.0, Math.min(3.0, spinVelocityYRef.current));
 
+    const storeBaseSpeed = (useEditorStore.getState().templateParams.baseSpeed as number) ?? 0;
+    const baseIdleSpeed = !snapActiveRef.current && !isDraggingRef.current ? storeBaseSpeed : 0;
     angleXRef.current += spinVelocityXRef.current * dt;
-    angleYRef.current += spinVelocityYRef.current * dt;
+    angleYRef.current += (baseIdleSpeed + spinVelocityYRef.current) * dt;
 
     const maxPitch = 0.9;
     if (angleXRef.current > maxPitch) angleXRef.current = maxPitch;
@@ -290,8 +191,7 @@ function ImageSphere({
   return (
     <group ref={groupRef}>
       {tiles.map(({ x, y, z, texIndex }, index) => {
-        const projectName = projectNames[texIndex] ?? "";
-
+        const name = projectNames[texIndex % projectNames.length];
         return (
           <mesh
             key={index}
@@ -301,16 +201,14 @@ function ImageSphere({
               obj.lookAt(0, 0, 0);
             }}
             onPointerOver={(e) => {
+              if (playbackMode !== "interactive") return;
               e.stopPropagation();
-              onHoverStart(projectName, e);
-            }}
-            onPointerMove={(e) => {
-              e.stopPropagation();
-              onHoverMove(e);
+              onHover?.(name);
             }}
             onPointerOut={(e) => {
+              if (playbackMode !== "interactive") return;
               e.stopPropagation();
-              onHoverEnd();
+              onUnhover?.();
             }}
           >
             <planeGeometry args={[tileW, tileH]} />
@@ -327,10 +225,10 @@ function ImageSphere({
 }
 
 export function CodropScene({ playbackMode = "interactive", progress = 0 }: TemplateSceneProps = {}) {
-  void playbackMode;
-  void progress;
   const containerRef = useRef<HTMLDivElement>(null);
   const targetCenterUv = useRef(new Vector2(0.5, 0.5));
+
+  const easing = useEditorStore((s) => s.easing || (s.templateParams.easing as string) || "power1.inOut");
 
   const sphereSpinVelocityX = useRef(0);
   const sphereSpinVelocityY = useRef(0);
@@ -347,7 +245,6 @@ export function CodropScene({ playbackMode = "interactive", progress = 0 }: Temp
   const snapActiveRef = useRef(false);
   const snapTargetXRef = useRef(0);
   const snapTargetYRef = useRef(0);
-  const snapWheelTimeoutRef = useRef<number | null>(null);
 
   const [hoveredProject, setHoveredProject] = useState<string | null>(null);
 
@@ -413,178 +310,13 @@ export function CodropScene({ playbackMode = "interactive", progress = 0 }: Temp
     };
   }, []);
 
-  const onImageHoverStart = useCallback(
-    (projectName: string, event: ThreeEvent<PointerEvent>) => {
-      if (isDraggingRef.current) return;
-      setHoveredProject(projectName);
-      setTooltipFromClientPoint(event.nativeEvent.clientX, event.nativeEvent.clientY);
-      tooltipCurrent.current = { ...tooltipTarget.current };
-    },
-    [setTooltipFromClientPoint],
-  );
+  const textFontSize = (useEditorStore((s) => s.templateParams.textFontSize) as number) ?? 0.6;
+  const textColor = (useEditorStore((s) => s.templateParams.textColor) as string) ?? "#ffffff";
+  const textPositionX = (useEditorStore((s) => s.templateParams.textPositionX) as number) ?? 0;
+  const textPositionY = (useEditorStore((s) => s.templateParams.textPositionY) as number) ?? 0;
+  const textPositionZ = (useEditorStore((s) => s.templateParams.textPositionZ) as number) ?? 0.5;
 
-  const onImageHoverMove = useCallback(
-    (event: ThreeEvent<PointerEvent>) => {
-      if (isDraggingRef.current) return;
-      setTooltipFromClientPoint(event.nativeEvent.clientX, event.nativeEvent.clientY);
-    },
-    [setTooltipFromClientPoint],
-  );
-
-  const onImageHoverEnd = useCallback(() => {
-    setHoveredProject(null);
-  }, []);
-
-  const onPointerEnter = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    cursorTarget.current = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-    cursorCurrent.current = { ...cursorTarget.current };
-    cursorActive.current = true;
-  }, []);
-
-  const onPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
-
-    if (isDraggingRef.current && dragPointerIdRef.current === event.pointerId) {
-      const dx = event.clientX - dragLastXRef.current;
-      const dy = event.clientY - dragLastYRef.current;
-      const dtMs = event.timeStamp - dragLastTRef.current;
-
-      dragLastXRef.current = event.clientX;
-      dragLastYRef.current = event.clientY;
-      dragLastTRef.current = event.timeStamp;
-
-      const dragToAngle = 0.003;
-      const deltaYaw = dx * dragToAngle;
-      const deltaPitch = -dy * dragToAngle;
-
-      sphereAngleY.current += deltaYaw;
-      sphereAngleX.current += deltaPitch;
-
-      const maxPitch = 0.9;
-      if (sphereAngleX.current > maxPitch) sphereAngleX.current = maxPitch;
-      if (sphereAngleX.current < -maxPitch) sphereAngleX.current = -maxPitch;
-
-      if (dtMs > 0) {
-        const dt = dtMs / 1000;
-        sphereSpinVelocityX.current = Math.max(-4.0, Math.min(4.0, deltaPitch / dt));
-        sphereSpinVelocityY.current = Math.max(-4.0, Math.min(4.0, deltaYaw / dt));
-      }
-    }
-
-    cursorTarget.current = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-
-    const nx = (event.clientX - rect.left) / rect.width;
-    const ny = (event.clientY - rect.top) / rect.height;
-    const clampedX = Math.min(1, Math.max(0, nx));
-    const clampedY = Math.min(1, Math.max(0, ny));
-
-    const uvX = clampedX;
-    const uvY = 1 - clampedY;
-
-    const strength = 0.4;
-    const cx = 0.5 + (uvX - 0.5) * strength;
-    const cy = 0.5 + (uvY - 0.5) * strength;
-
-    targetCenterUv.current.set(Math.min(1, Math.max(0, cx)), Math.min(1, Math.max(0, cy)));
-  }, []);
-
-  const onPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    snapActiveRef.current = false;
-    isDraggingRef.current = true;
-    dragPointerIdRef.current = event.pointerId;
-    dragLastXRef.current = event.clientX;
-    dragLastYRef.current = event.clientY;
-    dragLastTRef.current = event.timeStamp;
-
-    setHoveredProject(null);
-
-    try {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    } catch {
-    }
-  }, []);
-
-  const requestSnap = useCallback(() => {
-    const dirs = tileDirsRef.current;
-    if (!dirs.length) return;
-
-    const currentPitch = sphereAngleX.current;
-    const currentYaw = sphereAngleY.current;
-
-    const maxPitch = 0.9;
-
-    const wrapPi = (a: number) => {
-      const twoPi = Math.PI * 2;
-      let v = (a + Math.PI) % twoPi;
-      if (v < 0) v += twoPi;
-      return v - Math.PI;
-    };
-
-    let bestCost = Number.POSITIVE_INFINITY;
-    let bestPitch = currentPitch;
-    let bestYaw = currentYaw;
-
-    for (let i = 0; i < dirs.length; i++) {
-      const v = dirs[i];
-      const z1 = Math.hypot(v.x, v.z);
-      const desiredYaw = Math.atan2(-v.x, v.z);
-      const desiredPitch = Math.atan2(v.y, z1);
-
-      if (desiredPitch > maxPitch || desiredPitch < -maxPitch) continue;
-
-      const dy = wrapPi(desiredYaw - currentYaw);
-      const dx = desiredPitch - currentPitch;
-      const cost = dy * dy + dx * dx * 1.4;
-
-      if (cost < bestCost) {
-        bestCost = cost;
-        bestPitch = desiredPitch;
-        bestYaw = currentYaw + dy;
-      }
-    }
-
-    snapTargetXRef.current = bestPitch;
-    snapTargetYRef.current = bestYaw;
-    snapActiveRef.current = true;
-  }, []);
-
-  const endDrag = useCallback((event?: React.PointerEvent<HTMLDivElement>) => {
-    if (!isDraggingRef.current) return;
-    isDraggingRef.current = false;
-
-    const pid = dragPointerIdRef.current;
-    dragPointerIdRef.current = null;
-
-    if (event && pid != null) {
-      try {
-        event.currentTarget.releasePointerCapture(pid);
-      } catch {
-      }
-    }
-
-    requestSnap();
-  }, [requestSnap]);
-
-  const onPointerLeave = useCallback(() => {
-    targetCenterUv.current.set(0.5, 0.5);
-    cursorActive.current = false;
-    onImageHoverEnd();
-    endDrag();
-  }, [endDrag, onImageHoverEnd]);
-
-  const onWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
-    if (playbackMode === "auto") return;
-    sphereSpinVelocityY.current += event.deltaY * 0.004;
-
-    if (snapWheelTimeoutRef.current != null) {
-      window.clearTimeout(snapWheelTimeoutRef.current);
-    }
-    snapWheelTimeoutRef.current = window.setTimeout(() => {
-      if (!isDraggingRef.current) requestSnap();
-    }, 140);
-  }, [playbackMode, requestSnap]);
+  const bgParams = useSceneBackgroundParams();
 
   const assetsBySlot = useEditorStore((s) => s.assetsBySlot);
   const textAsset = useMemo(() => {
@@ -594,18 +326,76 @@ export function CodropScene({ playbackMode = "interactive", progress = 0 }: Temp
 
   return (
     <div
-      className="sceneRoot sceneRoot--light"
+      className={`sceneRoot ${bgParams.transparentBackground ? "sceneRoot--transparent" : ""}`}
       ref={containerRef}
-      onPointerEnter={playbackMode === "auto" ? undefined : onPointerEnter}
-      onPointerMove={playbackMode === "auto" ? undefined : onPointerMove}
-      onPointerDown={playbackMode === "auto" ? undefined : onPointerDown}
-      onPointerUp={playbackMode === "auto" ? undefined : endDrag}
-      onPointerCancel={playbackMode === "auto" ? undefined : endDrag}
-      onPointerLeave={playbackMode === "auto" ? undefined : onPointerLeave}
-      onWheel={onWheel}
+      style={{ pointerEvents: playbackMode === "interactive" ? "auto" : "none" }}
+      onPointerDown={(e) => {
+        if (playbackMode !== "interactive") return;
+        isDraggingRef.current = true;
+        dragPointerIdRef.current = e.pointerId;
+        dragLastXRef.current = e.clientX;
+        dragLastYRef.current = e.clientY;
+        dragLastTRef.current = performance.now();
+        snapActiveRef.current = false;
+        try {
+          (containerRef.current as HTMLElement).setPointerCapture(e.pointerId);
+        } catch {}
+      }}
+      onPointerMove={(e) => {
+        if (playbackMode !== "interactive") return;
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        cursorTarget.current = { x, y };
+        setTooltipFromClientPoint(e.clientX, e.clientY);
+        targetCenterUv.current.set(x / rect.width, 1.0 - y / rect.height);
+
+        if (isDraggingRef.current && dragPointerIdRef.current === e.pointerId) {
+          const now = performance.now();
+          const dt = now - dragLastTRef.current;
+          const dx = e.clientX - dragLastXRef.current;
+          const dy = e.clientY - dragLastYRef.current;
+          dragLastXRef.current = e.clientX;
+          dragLastYRef.current = e.clientY;
+          dragLastTRef.current = now;
+
+          if (dt > 0) {
+            sphereSpinVelocityY.current = (dx / dt) * 15;
+            sphereSpinVelocityX.current = -(dy / dt) * 15;
+          }
+          sphereAngleY.current += dx * 0.005;
+          sphereAngleX.current -= dy * 0.005;
+        }
+      }}
+      onPointerUp={(e) => {
+        if (playbackMode !== "interactive") return;
+        isDraggingRef.current = false;
+        dragPointerIdRef.current = null;
+        try {
+          (containerRef.current as HTMLElement).releasePointerCapture(e.pointerId);
+        } catch {}
+      }}
+      onPointerCancel={(e) => {
+        if (playbackMode !== "interactive") return;
+        isDraggingRef.current = false;
+        dragPointerIdRef.current = null;
+        try {
+          (containerRef.current as HTMLElement).releasePointerCapture(e.pointerId);
+        } catch {}
+      }}
+      onPointerEnter={() => {
+        if (playbackMode !== "interactive") return;
+        cursorActive.current = true;
+      }}
+      onPointerLeave={() => {
+        if (playbackMode !== "interactive") return;
+        cursorActive.current = false;
+        setHoveredProject(null);
+      }}
     >
       <Canvas
-        gl={{ preserveDrawingBuffer: true }}
+        gl={{ alpha: true, preserveDrawingBuffer: true, antialias: true }}
         frameloop="always"
         camera={{ position: [0, 0, 6.5], fov: 50 }}
         onCreated={({ camera }) => {
@@ -614,12 +404,13 @@ export function CodropScene({ playbackMode = "interactive", progress = 0 }: Temp
       >
         <Suspense fallback={null}>
           <AlwaysInvalidate />
-          <ambientLight intensity={0.65} />
-          <directionalLight position={[5, 5, 5]} intensity={1} />
-
-          <Environment preset="studio" blur={10.5} />
-
-          <GridPlaneLight targetCenterUv={targetCenterUv} />
+          <SceneBackground
+            {...bgParams}
+            targetCenterUv={targetCenterUv}
+            progress={progress}
+            playbackMode={playbackMode}
+            easing={easing}
+          />
 
           <ImageSphere
             spinVelocityXRef={sphereSpinVelocityX}
@@ -635,9 +426,8 @@ export function CodropScene({ playbackMode = "interactive", progress = 0 }: Temp
             onTileDirs={(dirs) => {
               tileDirsRef.current = dirs;
             }}
-            onHoverStart={onImageHoverStart}
-            onHoverMove={onImageHoverMove}
-            onHoverEnd={onImageHoverEnd}
+            onHover={setHoveredProject}
+            onUnhover={() => setHoveredProject(null)}
           />
 
           <CenterpieceModel
@@ -658,13 +448,13 @@ export function CodropScene({ playbackMode = "interactive", progress = 0 }: Temp
             angleRef={sphereAngleY}
           />
 
-          {textAsset && textAsset.content && (
+          {textAsset?.content && (
             <TextLayer3D
               content={textAsset.content}
-              fontUrl={textAsset.fontUrl}
-              position={[0, -2.4, 0.5]}
-              color="#111827"
-              fontSize={0.45}
+              fontUrl={textAsset?.fontUrl}
+              position={[textPositionX, textPositionY, textPositionZ]}
+              color={textColor}
+              fontSize={textFontSize}
             />
           )}
         </Suspense>
@@ -679,8 +469,6 @@ export function CodropScene({ playbackMode = "interactive", progress = 0 }: Temp
       )}
 
       <div className="customCursor" ref={cursorElRef} aria-hidden="true" />
-
-      <Loader />
     </div>
   );
 }
