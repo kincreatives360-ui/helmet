@@ -1,10 +1,17 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useEditorStore } from "../store/editorStore";
 
 export function BottomNav() {
+  const pathname = usePathname();
   const activeTemplateId = useEditorStore((s) => s.activeTemplateId);
   const setActiveTemplate = useEditorStore((s) => s.setActiveTemplate);
+
+  // If we are in the editor with an active template, the editor's own header and docked timeline take precedence
+  if (pathname === "/editor" && activeTemplateId) {
+    return null;
+  }
 
   return (
     <nav className="bottomNav" aria-label="Template Presets">

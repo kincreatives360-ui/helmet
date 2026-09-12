@@ -192,16 +192,16 @@ export function Timeline({ durationSeconds: initialDuration }: { durationSeconds
           aria-label={playing ? "Pause timeline" : "Play timeline"}
         >
           {playing ? (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="timelineBtnIcon">
               <rect x="6" y="4" width="4" height="16" rx="1" />
               <rect x="14" y="4" width="4" height="16" rx="1" />
             </svg>
           ) : (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="timelineBtnIcon">
               <path d="M8 5v14l11-7z" />
             </svg>
           )}
-          <span>{playing ? "Pause" : "Play"}</span>
+          <span className="timelineBtnText">{playing ? "Pause" : "Play"}</span>
         </button>
 
         <button
@@ -216,8 +216,8 @@ export function Timeline({ durationSeconds: initialDuration }: { durationSeconds
           title={isLooping ? "Looping enabled" : "Looping disabled"}
           aria-label={isLooping ? "Disable loop" : "Enable loop"}
         >
-          <Repeat size={13} />
-          <span>Loop</span>
+          <Repeat size={13} className="timelineBtnIcon" />
+          <span className="timelineBtnText">Loop</span>
         </button>
 
         <div className="timelineScrubberWrapper">
